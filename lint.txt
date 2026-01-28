@@ -1,0 +1,28 @@
+﻿
+> temp-app@0.1.0 lint
+> eslint
+
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\(dashboard)\dashboard\page.tsx
+  38:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\(dashboard)\quotations\create\page.tsx
+  11:23  warning  'setLineItems' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\(dashboard)\receiving\create\page.tsx
+  7:10  warning  'DenseTable' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\(dashboard)\review\page.tsx
+  106:117  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  106:122  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\(dashboard)\testing\page.tsx
+  5:10  warning  'DenseTable' is defined but never used  @typescript-eslint/no-unused-vars
+  6:10  warning  'Input' is defined but never used       @typescript-eslint/no-unused-vars
+
+C:\Users\admin\Desktop\AI\System Projects\lims-labflow\src\app\layout.tsx
+  25:9  warning  Block is not recommended. See: https://nextjs.org/docs/messages/google-font-display                                                                              @next/next/google-font-display
+  25:9  warning  Custom fonts not added in `pages/_document.js` will only load for a single page. This is discouraged. See: https://nextjs.org/docs/messages/no-page-custom-font  @next/next/no-page-custom-font
+
+Γ£û 9 problems (3 errors, 6 warnings)
+
