@@ -1,57 +1,67 @@
-export type NavItem = {
+
+// Map internal roles to navigation visibility
+type Role = "admin" | "manager" | "analyst";
+
+interface NavItem {
     title: string;
     href: string;
-    icon: string; // Material symbol name
-    roles: ("admin" | "analyst" | "manager")[];
-};
+    icon: string;
+    roles: Role[];
+}
 
 export const NAV_ITEMS: NavItem[] = [
     {
         title: "Dashboard",
         href: "/dashboard",
         icon: "dashboard",
-        roles: ["admin", "manager"]
+        roles: ["admin", "manager", "analyst"],
     },
     {
         title: "Quotations",
-        href: "/quotations",
+        href: "/quotations", // Updated: Points to List
         icon: "request_quote",
-        roles: ["admin"]
+        roles: ["admin", "manager"], // Sales/Admin only
+    },
+    {
+        title: "Contract Review",
+        href: "/quotations/review",
+        icon: "fact_check", // Changed icon
+        roles: ["manager"], // Manager only
     },
     {
         title: "Receiving",
-        href: "/receiving",
-        icon: "move_to_inbox",
-        roles: ["admin", "analyst"]
+        href: "/receiving", // Updated: Points to List
+        icon: "inventory_2",
+        roles: ["admin"],
     },
     {
-        title: "Worklist",
+        title: "Scheduling", // NEW
+        href: "/scheduling",
+        icon: "calendar_month",
+        roles: ["admin", "manager"],
+    },
+    {
+        title: "My Worklist", // Updated Label
         href: "/worklist",
-        icon: "playlist_add_check",
-        roles: ["analyst"]
+        icon: "biotech", // Testing icon
+        roles: ["analyst"], // Analyst only
     },
     {
-        title: "Testing",
-        href: "/testing",
-        icon: "biotech",
-        roles: ["analyst"]
+        title: "QC Monitor",
+        href: "/qc-monitor",
+        icon: "analytics",
+        roles: ["manager", "admin"],
     },
     {
-        title: "Review",
+        title: "Results Review",
         href: "/review",
-        icon: "fact_check",
-        roles: ["manager", "analyst"]
+        icon: "grading",
+        roles: ["manager"],
     },
     {
         title: "Reports",
         href: "/reports",
-        icon: "summarize",
-        roles: ["admin", "manager"]
-    },
-    {
-        title: "Settings",
-        href: "/settings",
-        icon: "settings",
-        roles: ["admin"]
+        icon: "description",
+        roles: ["admin", "manager"],
     },
 ];

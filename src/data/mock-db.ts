@@ -1,4 +1,4 @@
-import { Customer, Instrument, MatrixParameterRule, Method, Parameter, Report, ResultSubmission, SampleMatrix, TestResult, TestTask, Unit, User } from "@/types/master-data";
+import { Customer, Instrument, MatrixParameterRule, Method, Parameter, Report, ResultSubmission, SampleMatrix, TestResult, TestTask, Unit, User, Quotation, WorkOrder } from "@/types/master-data";
 
 // ... (Previous MOCK_USERS, CUSTOMERS, TECHNOLOGY, MATRICES, PARAMETERS, RULES)
 
@@ -141,7 +141,6 @@ export const MOCK_RESULTS: TestResult[] = [
     }
 ];
 
-// --- 8. REVIEW DATA (Phase 3) ---
 export const MOCK_SUBMISSIONS: ResultSubmission[] = [
     {
         id: "sub-001",
@@ -152,5 +151,49 @@ export const MOCK_SUBMISSIONS: ResultSubmission[] = [
         status: "SUBMITTED",
         total_tests: 1,
         qc_failure_count: 0 // QC Pass, but Compliance Fail
+    }
+];
+
+// --- 9. LIST DATA (Phase 4) ---
+export const MOCK_QUOTATIONS: Quotation[] = [
+    {
+        id: "q-2026-001",
+        quotation_no: "QT-2026-001",
+        customer_id: "cust-001",
+        customer_name_snapshot: "PT. Indofood Sukses Makmur",
+        created_at: new Date("2026-01-20"),
+        total_amount: 1250000,
+        status: "APPROVED"
+    },
+    {
+        id: "q-2026-002",
+        quotation_no: "QT-2026-002",
+        customer_id: "cust-002",
+        customer_name_snapshot: "Dinas Lingkungan Hidup DKI",
+        created_at: new Date("2026-01-25"),
+        total_amount: 5500000,
+        status: "DRAFT"
+    },
+    {
+        id: "q-2026-003",
+        quotation_no: "QT-2026-003",
+        customer_id: "cust-001",
+        customer_name_snapshot: "PT. Indofood Sukses Makmur",
+        created_at: new Date("2026-01-28"),
+        total_amount: 850000,
+        status: "SUBMITTED"
+    }
+];
+
+export const MOCK_WORK_ORDERS: WorkOrder[] = [
+    {
+        id: "wo-2026-001",
+        work_order_no: "WO-2026-001",
+        quotation_id: "q-2026-001",
+        customer_id: "cust-001",
+        customer_name_snapshot: "PT. Indofood Sukses Makmur",
+        received_date: new Date("2026-01-22"),
+        status: "IN_PROGRESS",
+        sample_count: 3
     }
 ];

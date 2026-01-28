@@ -162,3 +162,29 @@ export interface Report {
     approved_by_user_id?: string;
     is_locked: boolean;
 }
+
+// 9. CORE TRANSACTION LISTS (Phase 4)
+export type QuotationStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED";
+
+export interface Quotation {
+    id: string;
+    quotation_no: string;
+    customer_id: string;
+    customer_name_snapshot: string; // denormalized for list view
+    created_at: Date;
+    total_amount: number;
+    status: QuotationStatus;
+}
+
+export type WorkOrderStatus = "RECEIVED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface WorkOrder {
+    id: string;
+    work_order_no: string; // WO-2026-001
+    quotation_id?: string;
+    customer_id: string;
+    customer_name_snapshot: string;
+    received_date: Date;
+    status: WorkOrderStatus;
+    sample_count: number;
+}
