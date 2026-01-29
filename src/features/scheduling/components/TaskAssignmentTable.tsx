@@ -28,6 +28,7 @@ export default function TaskAssignmentTable() {
     const [filterInstrument, setFilterInstrument] = useState<string>("");
     const [filterStatus, setFilterStatus] = useState<string>("");
     const [filterPriority, setFilterPriority] = useState<string>("");
+    const [filterWorkOrder, setFilterWorkOrder] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
 
     // Bulk assignment
@@ -40,7 +41,7 @@ export default function TaskAssignmentTable() {
 
     const handleAssign = (taskId: string, userId: string) => {
         setTasks(prev => prev.map(t =>
-            t.id === taskId ? { ...t, assigned_to_user_id: userId, status: userId ? "ASSIGNED" : "PENDING" } : t
+            t.id === taskId ? { ...t, assigned_to_user_id: userId, status: userId ? "ASSIGNED" : "PLANNED" } as ExtendedTask : t
         ));
     };
 
@@ -105,9 +106,9 @@ export default function TaskAssignmentTable() {
         return skills.length > 0; // All analysts with skills are "qualified"
     };
 
-    // Filter work orders that are RECEIVED_CONFIRMED only (as per blueprint)
+    // Filter work orders that are RECEIVED or IN_PROGRESS only (as per blueprint)
     const confirmedWorkOrders = MOCK_WORK_ORDERS.filter(wo =>
-        wo.status === "RECEIVED_CONFIRMED" || wo.status === "IN_PROGRESS"
+        wo.status === "RECEIVED" || wo.status === "IN_PROGRESS"
     );
 
     const filteredTasks = useMemo(() => {
@@ -137,8 +138,13 @@ export default function TaskAssignmentTable() {
             result = result.filter(t => t.priority === filterPriority);
         }
 
+        // Work Order filter
+        if (filterWorkOrder) {
+            result = result.filter(t => t.work_order_id === filterWorkOrder);
+        }
+
         return result;
-    }, [tasks, searchQuery, filterInstrument, filterStatus, filterPriority]);
+    }, [tasks, searchQuery, filterInstrument, filterStatus, filterPriority, filterWorkOrder]);
 
     const priorityColors: Record<TaskPriority, string> = {
         LOW: "bg-slate-100 text-slate-600",
@@ -218,7 +224,7 @@ export default function TaskAssignmentTable() {
                         onChange={(e) => setFilterStatus(e.target.value)}
                     >
                         <option value="">All Status</option>
-                        <option value="PENDING">Pending</option>
+                        <option value="PLANNED">Planned</option>
                         <option value="ASSIGNED">Assigned</option>
                         <option value="IN_PROGRESS">In Progress</option>
                     </select>
@@ -244,6 +250,20 @@ export default function TaskAssignmentTable() {
                     >
                         <option value="">All Instruments</option>
                         {MOCK_INSTRUMENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    </select>
+
+                    {/* Work Order Filter */}
+                    <select
+                        className="text-sm border border-border-light rounded-md p-2 bg-white dark:bg-surface-dark dark:border-border-dark"
+                        value={filterWorkOrder}
+                        onChange={(e) => setFilterWorkOrder(e.target.value)}
+                    >
+                        <option value="">All Work Orders</option>
+                        {MOCK_WORK_ORDERS.map(wo => (
+                            <option key={wo.id} value={wo.id}>
+                                {wo.work_order_no} - {wo.customer_name_snapshot.slice(0, 20)}
+                            </option>
+                        ))}
                     </select>
                 </div>
 

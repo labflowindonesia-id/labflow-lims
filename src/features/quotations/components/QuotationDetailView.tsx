@@ -352,6 +352,57 @@ export default function QuotationDetailView({ id }: QuotationDetailProps) {
                     </div>
                 </PremiumCard>
 
+                {/* Version History */}
+                <PremiumCard title="Version History">
+                    <div className="space-y-3">
+                        {[
+                            { version: "v1.0", date: quotation.created_at, author: "Admin User", status: "DRAFT", note: "Initial draft created" },
+                            ...(quotation.status !== "DRAFT" ? [
+                                { version: "v1.0", date: new Date(new Date(quotation.created_at).getTime() + 86400000).toISOString(), author: "Admin User", status: "SUBMITTED", note: "Submitted for review" }
+                            ] : []),
+                            ...(quotation.status === "APPROVED" || actionStatus === "APPROVED" ? [
+                                { version: "v1.0", date: new Date().toISOString(), author: "Manager", status: "APPROVED", note: "Contract approved" }
+                            ] : []),
+                            ...(quotation.status === "REJECTED" || actionStatus === "REJECTED" ? [
+                                { version: "v1.0", date: new Date().toISOString(), author: "Manager", status: "REJECTED", note: rejectionReason || "Returned for revision" }
+                            ] : []),
+                        ].map((entry, idx, arr) => (
+                            <div key={idx} className="flex items-start gap-3">
+                                {/* Timeline dot */}
+                                <div className="flex flex-col items-center">
+                                    <div className={cn(
+                                        "w-2.5 h-2.5 rounded-full mt-1.5",
+                                        entry.status === "APPROVED" ? "bg-success" :
+                                            entry.status === "REJECTED" ? "bg-danger" :
+                                                entry.status === "SUBMITTED" ? "bg-blue-500" :
+                                                    "bg-slate-300"
+                                    )} />
+                                    {idx < arr.length - 1 && (
+                                        <div className="w-0.5 h-8 bg-slate-200 dark:bg-slate-700" />
+                                    )}
+                                </div>
+                                {/* Content */}
+                                <div className="flex-1 -mt-0.5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-mono font-medium text-text-main dark:text-white">{entry.version}</span>
+                                        <span className={cn(
+                                            "text-[10px] px-1.5 py-0.5 rounded font-bold",
+                                            entry.status === "APPROVED" ? "bg-green-100 text-green-700" :
+                                                entry.status === "REJECTED" ? "bg-red-100 text-red-700" :
+                                                    entry.status === "SUBMITTED" ? "bg-blue-100 text-blue-700" :
+                                                        "bg-slate-100 text-slate-600"
+                                        )}>{entry.status}</span>
+                                    </div>
+                                    <p className="text-xs text-text-secondary mt-0.5">{entry.note}</p>
+                                    <p className="text-[10px] text-text-secondary/70 mt-0.5">
+                                        {entry.author} • {new Date(entry.date).toLocaleDateString()}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </PremiumCard>
+
                 <Link href="/quotations">
                     <button className="w-full text-sm text-text-secondary hover:text-primary">
                         ← Back to List

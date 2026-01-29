@@ -9,6 +9,7 @@ import { ClientSelector } from "./ClientSelector";
 import { LineItemManager } from "./LineItemManager";
 import { QuotationLineItem } from "../types";
 import { Customer, CustomerContact } from "@/types/master-data";
+import { MOCK_PARAMETERS, MOCK_MATRICES } from "@/data/mock-db";
 import { cn } from "@/lib/utils";
 
 // Default Terms and Conditions
@@ -31,6 +32,7 @@ export default function QuotationForm() {
     const [expiryDays, setExpiryDays] = useState(30);
     const [termsAndConditions, setTermsAndConditions] = useState(DEFAULT_TERMS);
     const [showTermsEditor, setShowTermsEditor] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
 
     // NEW: Status & Workflow
     const [status, setStatus] = useState<"DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED">("DRAFT");
@@ -101,6 +103,14 @@ export default function QuotationForm() {
                 }
                 actions={
                     <div className="flex gap-2">
+                        {/* PDF Preview Button - Always visible */}
+                        <button
+                            onClick={() => setShowPdfPreview(true)}
+                            className="flex items-center gap-1 rounded-lg border border-border-light bg-white px-4 py-2 text-sm font-medium text-text-main shadow-sm hover:bg-background-light dark:border-border-dark dark:bg-surface-dark dark:text-white"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+                            Preview PDF
+                        </button>
                         {status === "DRAFT" && (
                             <>
                                 <button
@@ -312,6 +322,123 @@ export default function QuotationForm() {
                     </div>
                 </div>
             </div>
+
+            {/* PDF Preview Modal */}
+            {showPdfPreview && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-2xl dark:bg-surface-dark max-h-[90vh] overflow-auto">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-text-main dark:text-white">PDF Preview</h3>
+                            <button
+                                onClick={() => setShowPdfPreview(false)}
+                                className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                                <span className="material-symbols-outlined text-[24px] text-text-secondary">close</span>
+                            </button>
+                        </div>
+
+                        {/* Mock PDF Preview Content */}
+                        <div className="border border-border-light rounded-lg p-6 bg-white dark:bg-slate-900">
+                            {/* Header */}
+                            <div className="border-b border-slate-200 pb-4 mb-4">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h1 className="text-xl font-bold text-slate-900">QUOTATION</h1>
+                                        <p className="text-sm text-slate-500">{fullQuoteNo}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold text-primary">LabFlow LIMS</p>
+                                        <p className="text-xs text-slate-500">Laboratory Information Management System</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Customer Info */}
+                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                <div>
+                                    <p className="text-slate-500">Bill To:</p>
+                                    <p className="font-medium text-slate-900">{customer?.name || "No customer selected"}</p>
+                                    <p className="text-slate-600">{customer?.address || ""}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-slate-500">Date: {new Date().toLocaleDateString()}</p>
+                                    <p className="text-slate-500">Valid Until: {expiryDate.toLocaleDateString()}</p>
+                                </div>
+                            </div>
+
+                            {/* Line Items Table */}
+                            <div className="border rounded-lg overflow-hidden mb-4">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="text-left px-3 py-2 border-b">Description</th>
+                                            <th className="text-right px-3 py-2 border-b">Qty</th>
+                                            <th className="text-right px-3 py-2 border-b">Unit Price</th>
+                                            <th className="text-right px-3 py-2 border-b">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {lineItems.length > 0 ? lineItems.map((item, idx) => {
+                                            const paramName = MOCK_PARAMETERS.find(p => p.id === item.parameter_id)?.name || "Unknown Parameter";
+                                            const matrixName = MOCK_MATRICES.find(m => m.id === item.matrix_id)?.name || "";
+                                            return (
+                                                <tr key={idx} className="border-b">
+                                                    <td className="px-3 py-2">
+                                                        <span className="font-medium">{paramName}</span>
+                                                        {matrixName && <span className="block text-xs text-slate-500">{matrixName}</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">{item.qty}</td>
+                                                    <td className="px-3 py-2 text-right">Rp {item.unit_price.toLocaleString()}</td>
+                                                    <td className="px-3 py-2 text-right font-medium">Rp {item.total_price.toLocaleString()}</td>
+                                                </tr>
+                                            );
+                                        }) : (
+                                            <tr>
+                                                <td colSpan={4} className="px-3 py-4 text-center text-slate-400">No items added yet</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                    <tfoot className="bg-slate-50">
+                                        <tr className="font-medium">
+                                            <td colSpan={3} className="px-3 py-2 text-right">Subtotal</td>
+                                            <td className="px-3 py-2 text-right">Rp {subtotal.toLocaleString()}</td>
+                                        </tr>
+                                        <tr>
+                                            <td colSpan={3} className="px-3 py-2 text-right">PPN (11%)</td>
+                                            <td className="px-3 py-2 text-right">Rp {Math.round(taxAmount).toLocaleString()}</td>
+                                        </tr>
+                                        <tr className="font-bold text-primary">
+                                            <td colSpan={3} className="px-3 py-2 text-right">Grand Total</td>
+                                            <td className="px-3 py-2 text-right">Rp {Math.round(grandTotal).toLocaleString()}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+
+                            {/* Terms */}
+                            <div className="text-xs text-slate-500">
+                                <p className="font-medium text-slate-700 mb-1">Terms & Conditions:</p>
+                                <pre className="whitespace-pre-wrap">{termsAndConditions}</pre>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-4">
+                            <button
+                                onClick={() => setShowPdfPreview(false)}
+                                className="rounded-lg border border-border-light bg-white px-4 py-2 text-sm font-medium text-text-main hover:bg-background-light dark:border-border-dark dark:bg-surface-dark dark:text-white"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={() => alert("PDF download would start here")}
+                                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+                            >
+                                Download PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

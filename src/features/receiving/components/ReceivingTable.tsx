@@ -6,13 +6,26 @@ import { MOCK_WORK_ORDERS, MOCK_CUSTOMERS } from "@/data/mock-db";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useState, useMemo } from "react";
+import { WorkOrderStatus } from "@/types/master-data";
 
-type WorkOrderStatus = "DRAFT" | "RECEIVED_CONFIRMED" | "IN_PROGRESS" | "IN_REVIEW" | "COMPLETED" | "all";
+type FilterStatus = WorkOrderStatus | "all";
 
 export default function ReceivingTable() {
     const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<WorkOrderStatus>("all");
+    const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
+    const [customerFilter, setCustomerFilter] = useState<string>("all");
     const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
+    const [dateFrom, setDateFrom] = useState<string>("");
+    const [dateTo, setDateTo] = useState<string>("");
+
+    // Get unique customers for filter dropdown
+    const uniqueCustomers = useMemo(() => {
+        const customerIds = [...new Set(MOCK_WORK_ORDERS.map(w => w.customer_id))];
+        return customerIds.map(id => {
+            const customer = MOCK_CUSTOMERS.find(c => c.id === id);
+            return { id, name: customer?.name || "Unknown" };
+        });
+    }, []);
 
     // Filter and sort work orders
     const filteredWorkOrders = useMemo(() => {
@@ -32,6 +45,21 @@ export default function ReceivingTable() {
             result = result.filter(wo => wo.status === statusFilter);
         }
 
+        // Customer filter
+        if (customerFilter !== "all") {
+            result = result.filter(wo => wo.customer_id === customerFilter);
+        }
+
+        // Date range filter
+        if (dateFrom) {
+            const from = new Date(dateFrom).getTime();
+            result = result.filter(wo => new Date(wo.received_date).getTime() >= from);
+        }
+        if (dateTo) {
+            const to = new Date(dateTo).getTime() + 86400000;
+            result = result.filter(wo => new Date(wo.received_date).getTime() <= to);
+        }
+
         // Date sort
         result.sort((a, b) => {
             const dateA = new Date(a.received_date).getTime();
@@ -40,15 +68,14 @@ export default function ReceivingTable() {
         });
 
         return result;
-    }, [searchQuery, statusFilter, dateSort]);
+    }, [searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
 
-    const statusOptions: { value: WorkOrderStatus; label: string; color: string }[] = [
+    const statusOptions: { value: FilterStatus; label: string; color: string }[] = [
         { value: "all", label: "All Status", color: "" },
-        { value: "DRAFT", label: "Draft", color: "bg-slate-100 text-slate-600" },
-        { value: "RECEIVED_CONFIRMED", label: "Confirmed", color: "bg-blue-100 text-blue-600" },
-        { value: "IN_PROGRESS", label: "In Analysis", color: "bg-primary/10 text-primary" },
-        { value: "IN_REVIEW", label: "In Review", color: "bg-warning/10 text-warning" },
+        { value: "RECEIVED", label: "Received", color: "bg-blue-100 text-blue-600" },
+        { value: "IN_PROGRESS", label: "In Progress", color: "bg-primary/10 text-primary" },
         { value: "COMPLETED", label: "Completed", color: "bg-success/10 text-success" },
+        { value: "CANCELLED", label: "Cancelled", color: "bg-slate-100 text-slate-600" },
     ];
 
     return (
@@ -106,6 +133,44 @@ export default function ReceivingTable() {
                     ))}
                 </div>
 
+                {/* Customer Filter */}
+                <select
+                    value={customerFilter}
+                    onChange={(e) => setCustomerFilter(e.target.value)}
+                    className="rounded-lg border border-border-light bg-white px-3 py-2 text-sm text-text-main dark:border-border-dark dark:bg-background-dark dark:text-white"
+                >
+                    <option value="all">All Customers</option>
+                    {uniqueCustomers.map(cust => (
+                        <option key={cust.id} value={cust.id}>{cust.name}</option>
+                    ))}
+                </select>
+
+                {/* Date Range Filter */}
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-secondary">From:</span>
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="rounded-lg border border-border-light bg-white px-2 py-1.5 text-sm text-text-main dark:border-border-dark dark:bg-background-dark dark:text-white"
+                    />
+                    <span className="text-xs text-text-secondary">To:</span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="rounded-lg border border-border-light bg-white px-2 py-1.5 text-sm text-text-main dark:border-border-dark dark:bg-background-dark dark:text-white"
+                    />
+                    {(dateFrom || dateTo) && (
+                        <button
+                            onClick={() => { setDateFrom(""); setDateTo(""); }}
+                            className="text-xs text-text-secondary hover:text-primary"
+                        >
+                            Clear
+                        </button>
+                    )}
+                </div>
+
                 {/* Date Sort Toggle */}
                 <button
                     onClick={() => setDateSort(dateSort === "desc" ? "asc" : "desc")}
@@ -147,9 +212,9 @@ export default function ReceivingTable() {
                                 <span className={cn(
                                     "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full",
                                     w.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" :
-                                        w.status === "IN_REVIEW" ? "bg-warning/10 text-warning" :
-                                            w.status === "COMPLETED" ? "bg-green-100 text-green-700" :
-                                                w.status === "RECEIVED_CONFIRMED" ? "bg-primary/10 text-primary" :
+                                        w.status === "COMPLETED" ? "bg-green-100 text-green-700" :
+                                            w.status === "RECEIVED" ? "bg-primary/10 text-primary" :
+                                                w.status === "CANCELLED" ? "bg-slate-100 text-slate-500" :
                                                     "bg-slate-100 text-slate-500"
                                 )}>
                                     {w.status.replace(/_/g, " ")}

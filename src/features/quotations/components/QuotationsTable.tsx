@@ -14,6 +14,8 @@ export default function QuotationsTable() {
     const [statusFilter, setStatusFilter] = useState<QuotationStatus>("all");
     const [customerFilter, setCustomerFilter] = useState<string>("all");
     const [dateSort, setDateSort] = useState<"asc" | "desc">("desc");
+    const [dateFrom, setDateFrom] = useState<string>("");
+    const [dateTo, setDateTo] = useState<string>("");
 
     // Get unique customers for filter dropdown
     const uniqueCustomers = useMemo(() => {
@@ -47,6 +49,16 @@ export default function QuotationsTable() {
             result = result.filter(quote => quote.customer_id === customerFilter);
         }
 
+        // Date range filter
+        if (dateFrom) {
+            const from = new Date(dateFrom).getTime();
+            result = result.filter(quote => new Date(quote.created_at).getTime() >= from);
+        }
+        if (dateTo) {
+            const to = new Date(dateTo).getTime() + 86400000; // Include the full day
+            result = result.filter(quote => new Date(quote.created_at).getTime() <= to);
+        }
+
         // Date sort
         result.sort((a, b) => {
             const dateA = new Date(a.created_at).getTime();
@@ -55,7 +67,7 @@ export default function QuotationsTable() {
         });
 
         return result;
-    }, [searchQuery, statusFilter, customerFilter, dateSort]);
+    }, [searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
 
     const statusOptions: { value: QuotationStatus; label: string }[] = [
         { value: "all", label: "All Status" },
@@ -122,6 +134,32 @@ export default function QuotationsTable() {
                         <option key={cust.id} value={cust.id}>{cust.name}</option>
                     ))}
                 </select>
+
+                {/* Date Range Filter */}
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-secondary">From:</span>
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="rounded-lg border border-border-light bg-white px-2 py-1.5 text-sm text-text-main dark:border-border-dark dark:bg-background-dark dark:text-white"
+                    />
+                    <span className="text-xs text-text-secondary">To:</span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="rounded-lg border border-border-light bg-white px-2 py-1.5 text-sm text-text-main dark:border-border-dark dark:bg-background-dark dark:text-white"
+                    />
+                    {(dateFrom || dateTo) && (
+                        <button
+                            onClick={() => { setDateFrom(""); setDateTo(""); }}
+                            className="text-xs text-text-secondary hover:text-primary"
+                        >
+                            Clear
+                        </button>
+                    )}
+                </div>
 
                 {/* Date Sort Toggle */}
                 <button

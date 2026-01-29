@@ -16,6 +16,13 @@ interface SignatureData {
     dataUrl?: string;
 }
 
+interface SampleItem {
+    id: string;
+    name: string;
+    matrix: string;
+    status: "COMPLETED" | "IN_PROGRESS" | "PENDING";
+}
+
 export default function CreateReportPage() {
     const params = useParams();
     const router = useRouter();
@@ -32,6 +39,24 @@ export default function CreateReportPage() {
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+
+    // NEW: Multi-sample selection
+    const [samples] = useState<SampleItem[]>([
+        { id: "smp-001", name: "Inlet Water - PT Maju", matrix: "Water", status: "COMPLETED" },
+        { id: "smp-002", name: "Outlet Water - PT Maju", matrix: "Water", status: "COMPLETED" },
+        { id: "smp-003", name: "Sludge Sample A", matrix: "Sludge", status: "COMPLETED" },
+        { id: "smp-004", name: "Ambient Air Station 1", matrix: "Air", status: "IN_PROGRESS" },
+    ]);
+    const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set(["smp-001", "smp-002"]));
+
+    // NEW: QC data toggle
+    const [includeQCData, setIncludeQCData] = useState(false);
+    const [includeMethodDetails, setIncludeMethodDetails] = useState(false);
+
+    // NEW: Email notification
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emailRecipients, setEmailRecipients] = useState("customer@example.com");
+    const [emailMessage, setEmailMessage] = useState("Please find attached the Certificate of Analysis for your samples.");
 
     const templates: { id: TemplateType; name: string; description: string }[] = [
         { id: "standard", name: "Standard CoA", description: "Default certificate format" },
@@ -221,6 +246,98 @@ export default function CreateReportPage() {
                         </p>
                     </PremiumCard>
 
+                    {/* NEW: Sample Selection */}
+                    <PremiumCard title="Sample Selection">
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {samples.map(sample => (
+                                <label
+                                    key={sample.id}
+                                    className={cn(
+                                        "flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all",
+                                        selectedSamples.has(sample.id)
+                                            ? "border-primary bg-primary/5"
+                                            : "border-border-light dark:border-border-dark",
+                                        sample.status !== "COMPLETED" && "opacity-50"
+                                    )}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedSamples.has(sample.id)}
+                                        disabled={sample.status !== "COMPLETED"}
+                                        onChange={() => {
+                                            const newSet = new Set(selectedSamples);
+                                            if (newSet.has(sample.id)) {
+                                                newSet.delete(sample.id);
+                                            } else {
+                                                newSet.add(sample.id);
+                                            }
+                                            setSelectedSamples(newSet);
+                                        }}
+                                        className="rounded border-border-light"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-text-main dark:text-white truncate">
+                                            {sample.name}
+                                        </p>
+                                        <p className="text-[10px] text-text-secondary">{sample.matrix}</p>
+                                    </div>
+                                    <span className={cn(
+                                        "text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase",
+                                        sample.status === "COMPLETED" ? "bg-green-100 text-green-700" :
+                                            sample.status === "IN_PROGRESS" ? "bg-amber-100 text-amber-700" :
+                                                "bg-slate-100 text-slate-500"
+                                    )}>
+                                        {sample.status.replace("_", " ")}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        <p className="text-xs text-text-secondary mt-2">
+                            {selectedSamples.size} sample(s) selected
+                        </p>
+                    </PremiumCard>
+
+                    {/* NEW: Report Options */}
+                    <PremiumCard title="Report Options">
+                        <div className="space-y-3">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={includeQCData}
+                                    onChange={() => setIncludeQCData(!includeQCData)}
+                                    className="rounded border-border-light w-4 h-4"
+                                />
+                                <div>
+                                    <p className="text-sm font-medium text-text-main dark:text-white">Include QC Data</p>
+                                    <p className="text-xs text-text-secondary">Control charts & batch info</p>
+                                </div>
+                            </label>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={includeMethodDetails}
+                                    onChange={() => setIncludeMethodDetails(!includeMethodDetails)}
+                                    className="rounded border-border-light w-4 h-4"
+                                />
+                                <div>
+                                    <p className="text-sm font-medium text-text-main dark:text-white">Method Details</p>
+                                    <p className="text-xs text-text-secondary">SOPs & reference standards</p>
+                                </div>
+                            </label>
+                        </div>
+                    </PremiumCard>
+
+                    {/* NEW: Send Report */}
+                    <PremiumCard title="Send Report">
+                        <button
+                            onClick={() => setShowEmailModal(true)}
+                            className="w-full py-2.5 flex items-center justify-center gap-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">mail</span>
+                            Email to Customer
+                        </button>
+                    </PremiumCard>
+
                     {/* Signature Status */}
                     <PremiumCard title="Digital Signature">
                         {signature ? (
@@ -332,6 +449,85 @@ export default function CreateReportPage() {
                     </div>
                 </div>
             )}
+
+            {/* Email Modal */}
+            {showEmailModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-md shadow-xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-blue-600">mail</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-text-main dark:text-white">
+                                    Send Report
+                                </h3>
+                                <p className="text-sm text-text-secondary">
+                                    Email CoA to customer
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-sm font-medium text-text-main dark:text-white block mb-1">
+                                    Recipients
+                                </label>
+                                <input
+                                    type="text"
+                                    value={emailRecipients}
+                                    onChange={(e) => setEmailRecipients(e.target.value)}
+                                    placeholder="email@example.com, another@example.com"
+                                    className="w-full border border-border-light rounded-lg p-2 text-sm dark:border-border-dark dark:bg-background-dark"
+                                />
+                                <p className="text-xs text-text-secondary mt-1">
+                                    Separate multiple emails with commas
+                                </p>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-text-main dark:text-white block mb-1">
+                                    Message
+                                </label>
+                                <textarea
+                                    value={emailMessage}
+                                    onChange={(e) => setEmailMessage(e.target.value)}
+                                    rows={3}
+                                    className="w-full border border-border-light rounded-lg p-2 text-sm dark:border-border-dark dark:bg-background-dark resize-none"
+                                />
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-lg dark:bg-black/20">
+                                <p className="text-xs font-medium text-text-main dark:text-white mb-1">
+                                    Attachment
+                                </p>
+                                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                                    <span className="material-symbols-outlined text-[16px] text-danger">picture_as_pdf</span>
+                                    RPT-2024-{woId.slice(-4)}-{reportVersion}.pdf
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={() => setShowEmailModal(false)}
+                                className="flex-1 px-4 py-2 text-text-secondary hover:text-text-main"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    alert(`Email sent to: ${emailRecipients}`);
+                                    setShowEmailModal(false);
+                                }}
+                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">send</span>
+                                Send Email
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 interface ActionToolbarProps extends React.HTMLAttributes<HTMLDivElement> {
     title?: string;
-    description?: string;
+    description?: React.ReactNode;
     actions?: React.ReactNode;
 }
 
@@ -17,7 +17,7 @@ export function ActionToolbar({ className, title, description, actions, children
         >
             <div className="space-y-1">
                 {title && <h1 className="text-xl font-bold font-display text-text-main">{title}</h1>}
-                {description && <p className="text-sm text-text-secondary">{description}</p>}
+                {description && <div className="text-sm text-text-secondary">{description}</div>}
                 {children} {/* For extra content like breadcrumbs if needed */}
             </div>
 

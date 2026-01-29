@@ -1,10 +1,13 @@
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
 import { MOCK_WORK_ORDERS } from "@/data/mock-db";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export default function ResultsReviewTable() {
+interface Props {
+    onSelectWO?: (woId: string) => void;
+}
+
+export default function ResultsReviewTable({ onSelectWO }: Props) {
     // Mock Logic: In real app, we filter WOs where all tests are complete but status IS NOT 'COMPLETED'
     // For demo, we just show IN_PROGRESS ones
     const reviewQueue = MOCK_WORK_ORDERS.filter(w => w.status === "IN_PROGRESS");
@@ -13,7 +16,7 @@ export default function ResultsReviewTable() {
         <PremiumCard
             title="Results Review Queue"
             subtitle="Batch approval for completed analysis"
-            actions={
+            action={
                 <div className="flex gap-2">
                     <span className="flex items-center gap-1 text-xs text-slate-500">
                         <span className="w-2 h-2 rounded-full bg-blue-500"></span> In Progress
@@ -68,11 +71,12 @@ export default function ResultsReviewTable() {
                             accessorKey: "id",
                             className: "text-right",
                             cell: (w) => (
-                                <Link href={`/receiving/${w.id}`}>
-                                    <button className="rounded bg-white border border-border-light px-3 py-1 text-xs font-bold text-text-secondary shadow-sm hover:bg-slate-50 hover:text-primary hover:border-primary">
-                                        Review Details
-                                    </button>
-                                </Link>
+                                <button
+                                    onClick={() => onSelectWO?.(w.id)}
+                                    className="rounded bg-white border border-border-light px-3 py-1 text-xs font-bold text-text-secondary shadow-sm hover:bg-slate-50 hover:text-primary hover:border-primary"
+                                >
+                                    Review Details
+                                </button>
                             )
                         }
                     ]}
@@ -82,3 +86,4 @@ export default function ResultsReviewTable() {
         </PremiumCard>
     );
 }
+

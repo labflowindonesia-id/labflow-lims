@@ -10,50 +10,85 @@ interface DataPoint {
     y: number;
     value: number;
     date: string;
+    batch: string;
+    instrument: string;
     status: "PASS" | "FAIL" | "WARNING";
 }
+
+// Mock batches
+const MOCK_BATCHES = [
+    { id: "batch-001", name: "QC-2026-001", date: "2026-01-15" },
+    { id: "batch-002", name: "QC-2026-002", date: "2026-01-22" },
+    { id: "batch-003", name: "QC-2026-003", date: "2026-01-29" },
+];
+
+// Mock instruments
+const MOCK_INSTRUMENTS = [
+    { id: "inst-001", name: "Spectrophotometer DR-6000" },
+    { id: "inst-002", name: "AA Graphite 240" },
+    { id: "inst-003", name: "ICP-OES 5110" },
+];
 
 export default function ControlChart() {
     const [filterParameter, setFilterParameter] = useState("");
     const [filterMatrix, setFilterMatrix] = useState("");
+    const [filterBatch, setFilterBatch] = useState("");
+    const [filterInstrument, setFilterInstrument] = useState("");
     const [showLastN, setShowLastN] = useState(20);
     const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
 
-    // Mock control chart data
+    // Mock control chart data with batch info
     const mockData: DataPoint[] = useMemo(() => {
         const data: DataPoint[] = [];
         const now = new Date();
         for (let i = 0; i < 30; i++) {
             const date = new Date(now);
             date.setDate(date.getDate() - (30 - i));
-            const value = 95 + Math.random() * 15 - 5; // 90-105 range around 100 mean
-            const isOutlier = i === 15; // One outlier
+            const value = 95 + Math.random() * 15 - 5;
+            const isOutlier = i === 15;
             const finalValue = isOutlier ? 125 : value;
+            const batchIdx = Math.floor(i / 10);
             data.push({
                 x: (i / 29) * 500,
-                y: 200 - ((finalValue - 70) / 60) * 200, // Scale to chart height
+                y: 200 - ((finalValue - 70) / 60) * 200,
                 value: parseFloat(finalValue.toFixed(1)),
                 date: date.toLocaleDateString(),
+                batch: MOCK_BATCHES[batchIdx % MOCK_BATCHES.length].id,
+                instrument: MOCK_INSTRUMENTS[i % MOCK_INSTRUMENTS.length].id,
                 status: finalValue > 120 || finalValue < 80 ? "FAIL" : finalValue > 115 || finalValue < 85 ? "WARNING" : "PASS"
             });
         }
-        return data.slice(-showLastN);
-    }, [showLastN]);
+
+        // Apply filters
+        let filtered = data;
+        if (filterBatch) {
+            filtered = filtered.filter(d => d.batch === filterBatch);
+        }
+        if (filterInstrument) {
+            filtered = filtered.filter(d => d.instrument === filterInstrument);
+        }
+
+        // Recalculate x positions after filtering
+        const finalData = filtered.slice(-showLastN).map((d, i, arr) => ({
+            ...d,
+            x: (i / Math.max(arr.length - 1, 1)) * 500
+        }));
+
+        return finalData;
+    }, [showLastN, filterBatch, filterInstrument]);
 
     const mean = 100;
-    const ucl = 120; // +3SD
-    const lcl = 80;  // -3SD
-    const warningUpper = 115; // +2SD
-    const warningLower = 85;  // -2SD
+    const ucl = 120;
+    const lcl = 80;
+    const warningUpper = 115;
+    const warningLower = 85;
 
-    // Calculate Y positions for limits
     const meanY = 200 - ((mean - 70) / 60) * 200;
     const uclY = 200 - ((ucl - 70) / 60) * 200;
     const lclY = 200 - ((lcl - 70) / 60) * 200;
     const warnUpperY = 200 - ((warningUpper - 70) / 60) * 200;
     const warnLowerY = 200 - ((warningLower - 70) / 60) * 200;
 
-    // Generate polyline points
     const polylinePoints = mockData.map(d => `${d.x},${d.y}`).join(" ");
 
     return (
@@ -72,7 +107,7 @@ export default function ControlChart() {
                 </select>
             }
         >
-            {/* Filters */}
+            {/* Filters - Enhanced with Batch & Instrument */}
             <div className="flex flex-wrap gap-2 mb-4">
                 <select
                     className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
@@ -94,6 +129,40 @@ export default function ControlChart() {
                         <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                 </select>
+                <select
+                    className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
+                    value={filterBatch}
+                    onChange={(e) => setFilterBatch(e.target.value)}
+                >
+                    <option value="">All Batches</option>
+                    {MOCK_BATCHES.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                </select>
+                <select
+                    className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
+                    value={filterInstrument}
+                    onChange={(e) => setFilterInstrument(e.target.value)}
+                >
+                    <option value="">All Instruments</option>
+                    {MOCK_INSTRUMENTS.map(i => (
+                        <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                </select>
+                {(filterBatch || filterInstrument || filterParameter || filterMatrix) && (
+                    <button
+                        onClick={() => {
+                            setFilterBatch("");
+                            setFilterInstrument("");
+                            setFilterParameter("");
+                            setFilterMatrix("");
+                        }}
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                        Clear Filters
+                    </button>
+                )}
             </div>
 
             {/* Chart */}

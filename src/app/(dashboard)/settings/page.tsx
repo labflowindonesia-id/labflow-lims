@@ -5,14 +5,98 @@ import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
 import { Label } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
+import { CrudModal, FieldConfig } from "@/components/ui/CrudModal";
 import { MOCK_USERS, MOCK_CUSTOMERS, MOCK_PARAMETERS, MOCK_MATRICES, MOCK_METHODS, MOCK_INSTRUMENTS, MOCK_UNITS } from "@/data/mock-db";
 import { cn } from "@/lib/utils";
 
 type SettingsTab = "general" | "users" | "customers" | "parameters" | "matrices" | "methods" | "instruments" | "units" | "packages";
 
+interface ModalState {
+    isOpen: boolean;
+    mode: "add" | "edit" | "delete";
+    data: Record<string, any>;
+    entityType: string;
+}
+
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<SettingsTab>("general");
     const [searchQuery, setSearchQuery] = useState("");
+    const [modal, setModal] = useState<ModalState>({ isOpen: false, mode: "add", data: {}, entityType: "user" });
+
+    const openModal = (mode: "add" | "edit" | "delete", entityType: string, data: Record<string, any> = {}) => {
+        setModal({ isOpen: true, mode, entityType, data });
+    };
+
+    const closeModal = () => {
+        setModal({ isOpen: false, mode: "add", data: {}, entityType: "user" });
+    };
+
+    const handleSave = (formData: Record<string, any>) => {
+        console.log("Saving:", modal.entityType, modal.mode, formData);
+        alert(`${modal.mode === "add" ? "Created" : modal.mode === "edit" ? "Updated" : "Deleted"} ${modal.entityType}: ${JSON.stringify(formData)}`);
+    };
+
+    // Field configurations for each entity type
+    const fieldConfigs: Record<string, FieldConfig[]> = {
+        user: [
+            { name: "full_name", label: "Full Name", type: "text", required: true, placeholder: "John Doe" },
+            { name: "email", label: "Email", type: "email", required: true, placeholder: "john@example.com" },
+            {
+                name: "role", label: "Role", type: "select", required: true, options: [
+                    { value: "ADMIN", label: "Admin" },
+                    { value: "MANAGER", label: "Manager" },
+                    { value: "ANALYST", label: "Analyst" },
+                    { value: "REVIEWER", label: "Reviewer" },
+                ]
+            },
+            { name: "is_active", label: "Active Status", type: "checkbox", placeholder: "User is active" },
+        ],
+        customer: [
+            { name: "name", label: "Company Name", type: "text", required: true },
+            { name: "code", label: "Customer Code", type: "text", required: true, placeholder: "CUST-001" },
+            { name: "address", label: "Address", type: "textarea", placeholder: "Full address" },
+            { name: "phone", label: "Phone", type: "tel" },
+            { name: "email", label: "Email", type: "email" },
+        ],
+        parameter: [
+            { name: "name", label: "Parameter Name", type: "text", required: true },
+            { name: "symbol", label: "Symbol", type: "text", placeholder: "e.g. COD, BOD" },
+            {
+                name: "category", label: "Category", type: "select", options: [
+                    { value: "Physical", label: "Physical" },
+                    { value: "Chemical", label: "Chemical" },
+                    { value: "Biological", label: "Biological" },
+                ]
+            },
+        ],
+        matrix: [
+            { name: "name", label: "Matrix Name", type: "text", required: true },
+            { name: "code", label: "Code", type: "text", required: true },
+            { name: "category", label: "Category", type: "text" },
+        ],
+        method: [
+            { name: "name", label: "Method Name", type: "text", required: true },
+            { name: "code", label: "Method Code", type: "text", required: true },
+            { name: "is_accredited", label: "Accredited", type: "checkbox", placeholder: "Method is accredited" },
+        ],
+        instrument: [
+            { name: "name", label: "Instrument Name", type: "text", required: true },
+            { name: "code", label: "Code", type: "text", required: true },
+            { name: "location", label: "Location", type: "text" },
+            {
+                name: "status", label: "Status", type: "select", options: [
+                    { value: "READY", label: "Ready" },
+                    { value: "IN_USE", label: "In Use" },
+                    { value: "MAINTENANCE", label: "Maintenance" },
+                    { value: "CALIBRATION", label: "Calibration" },
+                ]
+            },
+        ],
+        unit: [
+            { name: "name", label: "Unit Name", type: "text", required: true },
+            { name: "symbol", label: "Symbol", type: "text", required: true, placeholder: "e.g. mg/L" },
+        ],
+    };
 
     const tabs: { id: SettingsTab; label: string; icon: string }[] = [
         { id: "general", label: "General", icon: "settings" },
@@ -118,7 +202,10 @@ export default function SettingsPage() {
                         title="User Management"
                         subtitle="Manage laboratory personnel and access"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button
+                                onClick={() => openModal("add", "user")}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium"
+                            >
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add User
                             </button>
@@ -159,10 +246,20 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
+                                    cell: u => (
                                         <div className="flex gap-2">
-                                            <button className="text-primary hover:underline text-xs">Edit</button>
-                                            <button className="text-danger hover:underline text-xs">Deactivate</button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); openModal("edit", "user", u); }}
+                                                className="text-primary hover:underline text-xs"
+                                            >
+                                                Edit
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); openModal("delete", "user", u); }}
+                                                className="text-danger hover:underline text-xs"
+                                            >
+                                                Delete
+                                            </button>
                                         </div>
                                     )
                                 }
@@ -177,7 +274,7 @@ export default function SettingsPage() {
                         title="Customers & Contacts"
                         subtitle="Manage client information"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button onClick={() => openModal("add", "customer")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add Customer
                             </button>
@@ -194,10 +291,10 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
+                                    cell: (c) => (
                                         <div className="flex gap-2">
-                                            <button className="text-primary hover:underline text-xs">Edit</button>
-                                            <button className="text-primary hover:underline text-xs">Contacts</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "customer", c); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "customer", c); }} className="text-danger hover:underline text-xs">Delete</button>
                                         </div>
                                     )
                                 }
@@ -219,7 +316,7 @@ export default function SettingsPage() {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-48"
                                 />
-                                <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                                <button onClick={() => openModal("add", "parameter")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                     <span className="material-symbols-outlined text-[16px]">add</span>
                                     Add
                                 </button>
@@ -244,8 +341,11 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
-                                        <button className="text-primary hover:underline text-xs">Edit</button>
+                                    cell: (p) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "parameter", p); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "parameter", p); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
                                     )
                                 }
                             ]}
@@ -259,7 +359,7 @@ export default function SettingsPage() {
                         title="Sample Matrices"
                         subtitle="Sample types and matrix categories"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button onClick={() => openModal("add", "matrix")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add Matrix
                             </button>
@@ -275,8 +375,11 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
-                                        <button className="text-primary hover:underline text-xs">Edit</button>
+                                    cell: (m) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "matrix", m); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "matrix", m); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
                                     )
                                 }
                             ]}
@@ -290,7 +393,7 @@ export default function SettingsPage() {
                         title="Test Methods"
                         subtitle="Standard test methods and procedures"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button onClick={() => openModal("add", "method")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add Method
                             </button>
@@ -317,8 +420,11 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
-                                        <button className="text-primary hover:underline text-xs">Edit</button>
+                                    cell: (m) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "method", m); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "method", m); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
                                     )
                                 }
                             ]}
@@ -332,7 +438,7 @@ export default function SettingsPage() {
                         title="Instruments"
                         subtitle="Laboratory equipment and calibration status"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button onClick={() => openModal("add", "instrument")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add Instrument
                             </button>
@@ -376,8 +482,11 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
-                                        <button className="text-primary hover:underline text-xs">Edit</button>
+                                    cell: (i) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "instrument", i); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "instrument", i); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
                                     )
                                 }
                             ]}
@@ -391,7 +500,7 @@ export default function SettingsPage() {
                         title="Units of Measurement"
                         subtitle="Standard units and conversion factors"
                         action={
-                            <button className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                            <button onClick={() => openModal("add", "unit")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
                                 <span className="material-symbols-outlined text-[16px]">add</span>
                                 Add Unit
                             </button>
@@ -406,8 +515,11 @@ export default function SettingsPage() {
                                 {
                                     header: "Actions",
                                     accessorKey: "id",
-                                    cell: () => (
-                                        <button className="text-primary hover:underline text-xs">Edit</button>
+                                    cell: (u) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "unit", u); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "unit", u); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
                                     )
                                 }
                             ]}
@@ -450,6 +562,18 @@ export default function SettingsPage() {
                     </PremiumCard>
                 )}
             </div>
+
+            {/* CRUD Modal */}
+            <CrudModal
+                isOpen={modal.isOpen}
+                onClose={closeModal}
+                title={`${modal.mode === "add" ? "Add" : modal.mode === "edit" ? "Edit" : "Delete"} ${modal.entityType.charAt(0).toUpperCase() + modal.entityType.slice(1)}`}
+                mode={modal.mode}
+                fields={fieldConfigs[modal.entityType] || []}
+                initialData={modal.data}
+                onSave={handleSave}
+                entityName={modal.entityType}
+            />
         </div>
     );
 }

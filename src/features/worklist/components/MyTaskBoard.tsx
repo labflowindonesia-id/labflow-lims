@@ -234,7 +234,7 @@ export default function MyTaskBoard() {
                                 </div>
 
                                 {/* Meta Info */}
-                                <div className="text-xs space-y-1 text-slate-500 dark:text-slate-400">
+                                <div className="text-xs space-y-1 text-slate-500 dark:text-slate-400 mb-3">
                                     <div className="flex items-center gap-2">
                                         <span className="material-symbols-outlined text-[14px]">science</span>
                                         {task.matrix_name_snapshot}
@@ -250,6 +250,53 @@ export default function MyTaskBoard() {
                                         {new Date(task.due_date).toLocaleDateString()}
                                     </div>
                                 </div>
+
+                                {/* Quick Actions */}
+                                {task.status !== "COMPLETED" && (
+                                    <div className="flex gap-2 pt-3 border-t border-border-light dark:border-border-dark">
+                                        {(task.status === "ASSIGNED" || task.status === "PLANNED") && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    alert(`Starting run for ${task.parameter_name_snapshot}...`);
+                                                }}
+                                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary-hover transition-colors"
+                                            >
+                                                <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+                                                Start Run
+                                            </button>
+                                        )}
+                                        {task.status === "IN_PROGRESS" && (
+                                            <>
+                                                {needsRawData && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            alert(`Upload raw data for ${task.parameter_name_snapshot}...`);
+                                                        }}
+                                                        className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-white/10 text-text-main dark:text-white hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">upload_file</span>
+                                                        Upload
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        alert(`Marking ${task.parameter_name_snapshot} as complete...`);
+                                                    }}
+                                                    className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-success text-white hover:bg-success/90 transition-colors"
+                                                >
+                                                    <span className="material-symbols-outlined text-[14px]">check</span>
+                                                    Complete
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Hover Arrow */}
                                 <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
