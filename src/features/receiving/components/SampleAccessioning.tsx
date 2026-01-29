@@ -39,12 +39,15 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
     const [matrixId, setMatrixId] = useState(defaultMatrixId || "");
     const [quantity, setQuantity] = useState("1");
     const [unitId, setUnitId] = useState("");
+    const [packagingType, setPackagingType] = useState("BOTTLE");
+    const [sealIntact, setSealIntact] = useState(true);
     const [condition, setCondition] = useState("INTACT");
     const [storageType, setStorageType] = useState("CHILLER");
     const [storageLocation, setStorageLocation] = useState("");
     const [temp, setTemp] = useState("");
     const [dueDate, setDueDate] = useState("");
     const [printBarcode, setPrintBarcode] = useState(true);
+    const [acceptanceDecision, setAcceptanceDecision] = useState<"ACCEPT" | "CONDITIONAL" | "REJECT">("ACCEPT");
 
     // Filter storage locations by type
     const filteredLocations = useMemo(() =>
@@ -161,6 +164,37 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                         </div>
                     </div>
 
+                    {/* Packaging Type */}
+                    <div className="space-y-2">
+                        <Label>Packaging / Container Type</Label>
+                        <select
+                            className="w-full text-sm rounded-md border border-border-light p-2 bg-white dark:bg-white/5 dark:border-white/10"
+                            value={packagingType}
+                            onChange={(e) => setPackagingType(e.target.value)}
+                        >
+                            <option value="BOTTLE">Plastic Bottle</option>
+                            <option value="GLASS">Glass Bottle</option>
+                            <option value="BAG">Sample Bag</option>
+                            <option value="CONTAINER">Sealed Container</option>
+                            <option value="VIAL">Vial</option>
+                            <option value="OTHER">Other</option>
+                        </select>
+                    </div>
+
+                    {/* Seal Status */}
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-border-light hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={sealIntact}
+                            onChange={(e) => setSealIntact(e.target.checked)}
+                            className="h-5 w-5 rounded border-border-light text-success"
+                        />
+                        <div>
+                            <span className="font-medium text-sm text-text-main dark:text-white">Seal Intact</span>
+                            <p className="text-xs text-text-secondary">Sample container seal/cap is undamaged</p>
+                        </div>
+                    </label>
+
                     {/* Due Date */}
                     <div className="space-y-2">
                         <Label>Requested Due Date</Label>
@@ -255,6 +289,39 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                             <span className="material-symbols-outlined text-4xl text-slate-300 block mb-2">add_a_photo</span>
                             <p className="text-sm text-text-secondary">Click to capture/upload sample photo evidence</p>
                         </div>
+                    </div>
+
+                    {/* Acceptance Decision */}
+                    <div className="space-y-2">
+                        <Label>Acceptance Decision</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {(['ACCEPT', 'CONDITIONAL', 'REJECT'] as const).map(decision => (
+                                <button
+                                    key={decision}
+                                    type="button"
+                                    onClick={() => setAcceptanceDecision(decision)}
+                                    className={cn(
+                                        "text-xs py-2 px-1 rounded border transition-all font-medium",
+                                        acceptanceDecision === decision
+                                            ? (decision === "ACCEPT" ? "bg-success text-white border-success" :
+                                                decision === "CONDITIONAL" ? "bg-warning text-white border-warning" :
+                                                    "bg-danger text-white border-danger")
+                                            : "bg-surface-light border-border-light hover:bg-slate-100 dark:bg-surface-dark dark:border-white/10"
+                                    )}
+                                >
+                                    {decision === "ACCEPT" && "✓ "}
+                                    {decision === "CONDITIONAL" && "⚠ "}
+                                    {decision === "REJECT" && "✕ "}
+                                    {decision}
+                                </button>
+                            ))}
+                        </div>
+                        {acceptanceDecision === "CONDITIONAL" && (
+                            <p className="text-xs text-warning mt-1">⚠ Proceed with documented exceptions</p>
+                        )}
+                        {acceptanceDecision === "REJECT" && (
+                            <p className="text-xs text-danger mt-1">✕ Sample does not meet acceptance criteria</p>
+                        )}
                     </div>
                 </div>
 

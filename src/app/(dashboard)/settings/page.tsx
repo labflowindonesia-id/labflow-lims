@@ -9,7 +9,7 @@ import { CrudModal, FieldConfig } from "@/components/ui/CrudModal";
 import { MOCK_USERS, MOCK_CUSTOMERS, MOCK_PARAMETERS, MOCK_MATRICES, MOCK_METHODS, MOCK_INSTRUMENTS, MOCK_UNITS } from "@/data/mock-db";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "general" | "users" | "customers" | "parameters" | "matrices" | "methods" | "instruments" | "units" | "packages";
+type SettingsTab = "general" | "users" | "customers" | "parameters" | "matrices" | "methods" | "instruments" | "units" | "packages" | "departments" | "matrix_rules" | "price_list";
 
 interface ModalState {
     isOpen: boolean;
@@ -96,18 +96,39 @@ export default function SettingsPage() {
             { name: "name", label: "Unit Name", type: "text", required: true },
             { name: "symbol", label: "Symbol", type: "text", required: true, placeholder: "e.g. mg/L" },
         ],
+        department: [
+            { name: "name", label: "Department Name", type: "text", required: true },
+            { name: "code", label: "Department Code", type: "text", required: true, placeholder: "e.g. CHEM, MICRO" },
+            { name: "head", label: "Department Head", type: "text", placeholder: "Name of department head" },
+            { name: "is_active", label: "Active", type: "checkbox", placeholder: "Department is active" },
+        ],
+        matrix_rule: [
+            { name: "matrix", label: "Matrix", type: "select", required: true, options: MOCK_MATRICES.map(m => ({ value: m.id, label: m.name })) },
+            { name: "parameter", label: "Parameter", type: "select", required: true, options: MOCK_PARAMETERS.map(p => ({ value: p.id, label: p.name })) },
+            { name: "method", label: "Default Method", type: "select", options: MOCK_METHODS.map(m => ({ value: m.id, label: m.name })) },
+            { name: "is_allowed", label: "Allowed", type: "checkbox", placeholder: "Combination is allowed" },
+        ],
+        price_item: [
+            { name: "matrix", label: "Matrix", type: "select", required: true, options: MOCK_MATRICES.map(m => ({ value: m.id, label: m.name })) },
+            { name: "parameter", label: "Parameter", type: "select", required: true, options: MOCK_PARAMETERS.map(p => ({ value: p.id, label: p.name })) },
+            { name: "price", label: "Price (IDR)", type: "number", required: true, placeholder: "e.g. 150000" },
+            { name: "min_qty", label: "Min Quantity", type: "number", placeholder: "Minimum quantity for this price" },
+        ],
     };
 
     const tabs: { id: SettingsTab; label: string; icon: string }[] = [
         { id: "general", label: "General", icon: "settings" },
         { id: "users", label: "Users", icon: "group" },
         { id: "customers", label: "Customers", icon: "business" },
+        { id: "departments", label: "Departments", icon: "corporate_fare" },
         { id: "parameters", label: "Parameters", icon: "science" },
         { id: "matrices", label: "Matrices", icon: "grid_view" },
+        { id: "matrix_rules", label: "Matrix-Param Rules", icon: "rule" },
         { id: "methods", label: "Methods", icon: "description" },
         { id: "instruments", label: "Instruments", icon: "precision_manufacturing" },
         { id: "units", label: "Units", icon: "straighten" },
         { id: "packages", label: "Test Packages", icon: "inventory_2" },
+        { id: "price_list", label: "Price List", icon: "payments" },
     ];
 
     const filterData = <T extends { name?: string }>(data: T[]): T[] => {
@@ -559,6 +580,179 @@ export default function SettingsPage() {
                                 </div>
                             ))}
                         </div>
+                    </PremiumCard>
+                )}
+
+                {/* Departments */}
+                {activeTab === "departments" && (
+                    <PremiumCard
+                        title="departments"
+                        subtitle="Laboratory departments and sections"
+                        action={
+                            <button onClick={() => openModal("add", "department")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                                <span className="material-symbols-outlined text-[16px]">add</span>
+                                Add Department
+                            </button>
+                        }
+                    >
+                        <DenseTable
+                            data={[
+                                { id: "dept-001", name: "Chemistry", code: "CHEM", head: "Dr. Ahmad Wijaya", is_active: true },
+                                { id: "dept-002", name: "Microbiology", code: "MICRO", head: "Dr. Siti Rahayu", is_active: true },
+                                { id: "dept-003", name: "Physical Testing", code: "PHYS", head: "Budi Santoso", is_active: true },
+                                { id: "dept-004", name: "Sample Receiving", code: "RCV", head: "Maya Putri", is_active: true },
+                                { id: "dept-005", name: "QA/QC", code: "QC", head: "Rina Kusuma", is_active: false },
+                            ]}
+                            keyExtractor={d => d.id}
+                            columns={[
+                                { header: "Department", accessorKey: "name", className: "font-medium" },
+                                { header: "Code", accessorKey: "code", className: "font-mono text-xs" },
+                                { header: "Head", accessorKey: "head" },
+                                {
+                                    header: "Status",
+                                    accessorKey: "is_active",
+                                    cell: (d) => (
+                                        <span className={cn(
+                                            "px-2 py-0.5 rounded text-xs font-bold",
+                                            d.is_active ? "bg-success/20 text-success" : "bg-slate-100 text-slate-500"
+                                        )}>
+                                            {d.is_active ? "Active" : "Inactive"}
+                                        </span>
+                                    )
+                                },
+                                {
+                                    header: "Actions",
+                                    accessorKey: "id",
+                                    className: "text-right",
+                                    cell: (d) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "department", d); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "department", d); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
+                                    )
+                                }
+                            ]}
+                        />
+                    </PremiumCard>
+                )}
+
+                {/* Matrix-Parameter Rules */}
+                {activeTab === "matrix_rules" && (
+                    <PremiumCard
+                        title="Matrix-Parameter Rules"
+                        subtitle="Define which parameters are allowed for each matrix type"
+                        action={
+                            <button onClick={() => openModal("add", "matrix_rule")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                                <span className="material-symbols-outlined text-[16px]">add</span>
+                                Add Rule
+                            </button>
+                        }
+                    >
+                        <DenseTable
+                            data={[
+                                { id: "rule-001", matrix: "Air Minum", parameter: "pH", method: "SNI 6989.11:2019", is_allowed: true },
+                                { id: "rule-002", matrix: "Air Minum", parameter: "TDS", method: "SNI 6989.27:2019", is_allowed: true },
+                                { id: "rule-003", matrix: "Air Limbah", parameter: "BOD", method: "SNI 6989.72:2009", is_allowed: true },
+                                { id: "rule-004", matrix: "Air Limbah", parameter: "COD", method: "SNI 6989.2:2019", is_allowed: true },
+                                { id: "rule-005", matrix: "Tanah", parameter: "pH", method: "SNI 3551:2012", is_allowed: true },
+                                { id: "rule-006", matrix: "Air Minum", parameter: "BOD", method: null, is_allowed: false },
+                            ]}
+                            keyExtractor={r => r.id}
+                            columns={[
+                                { header: "Matrix", accessorKey: "matrix", className: "font-medium" },
+                                { header: "Parameter", accessorKey: "parameter" },
+                                {
+                                    header: "Default Method",
+                                    accessorKey: "method",
+                                    cell: (r) => r.method || <span className="text-slate-400 italic">Not specified</span>
+                                },
+                                {
+                                    header: "Allowed",
+                                    accessorKey: "is_allowed",
+                                    cell: (r) => (
+                                        <span className={cn(
+                                            "px-2 py-0.5 rounded text-xs font-bold",
+                                            r.is_allowed ? "bg-success/20 text-success" : "bg-danger/20 text-danger"
+                                        )}>
+                                            {r.is_allowed ? "Yes" : "No"}
+                                        </span>
+                                    )
+                                },
+                                {
+                                    header: "Actions",
+                                    accessorKey: "id",
+                                    className: "text-right",
+                                    cell: (r) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "matrix_rule", r); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "matrix_rule", r); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
+                                    )
+                                }
+                            ]}
+                        />
+                    </PremiumCard>
+                )}
+
+                {/* Price List */}
+                {activeTab === "price_list" && (
+                    <PremiumCard
+                        title="Price List"
+                        subtitle="Manage test pricing by matrix and parameter"
+                        action={
+                            <div className="flex gap-2">
+                                <button className="flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-text-main rounded-lg text-sm font-medium hover:bg-slate-50">
+                                    <span className="material-symbols-outlined text-[16px]">upload</span>
+                                    Import Excel
+                                </button>
+                                <button onClick={() => openModal("add", "price_item")} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium">
+                                    <span className="material-symbols-outlined text-[16px]">add</span>
+                                    Add Price
+                                </button>
+                            </div>
+                        }
+                    >
+                        <DenseTable
+                            data={[
+                                { id: "price-001", matrix: "Air Minum", parameter: "pH", price: 75000, min_qty: 1 },
+                                { id: "price-002", matrix: "Air Minum", parameter: "TDS", price: 100000, min_qty: 1 },
+                                { id: "price-003", matrix: "Air Minum", parameter: "Kekeruhan", price: 85000, min_qty: 1 },
+                                { id: "price-004", matrix: "Air Limbah", parameter: "BOD", price: 250000, min_qty: 1 },
+                                { id: "price-005", matrix: "Air Limbah", parameter: "COD", price: 200000, min_qty: 1 },
+                                { id: "price-006", matrix: "Tanah", parameter: "pH Tanah", price: 120000, min_qty: 1 },
+                                { id: "price-007", matrix: "Air Minum", parameter: "pH", price: 65000, min_qty: 10 },
+                            ]}
+                            keyExtractor={p => p.id}
+                            columns={[
+                                { header: "Matrix", accessorKey: "matrix", className: "font-medium" },
+                                { header: "Parameter", accessorKey: "parameter" },
+                                {
+                                    header: "Price",
+                                    accessorKey: "price",
+                                    className: "text-right font-mono",
+                                    cell: (p) => `Rp ${p.price.toLocaleString()}`
+                                },
+                                {
+                                    header: "Min Qty",
+                                    accessorKey: "min_qty",
+                                    className: "text-center",
+                                    cell: (p) => p.min_qty > 1 ? (
+                                        <span className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-bold">≥{p.min_qty}</span>
+                                    ) : "-"
+                                },
+                                {
+                                    header: "Actions",
+                                    accessorKey: "id",
+                                    className: "text-right",
+                                    cell: (p) => (
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("edit", "price_item", p); }} className="text-primary hover:underline text-xs">Edit</button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal("delete", "price_item", p); }} className="text-danger hover:underline text-xs">Delete</button>
+                                        </div>
+                                    )
+                                }
+                            ]}
+                        />
                     </PremiumCard>
                 )}
             </div>

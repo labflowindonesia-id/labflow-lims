@@ -25,7 +25,10 @@ export interface CustomerContact {
 export interface Customer {
     id: string;
     name: string;
+    code?: string;
     address: string;
+    phone?: string;
+    email?: string;
     contacts: CustomerContact[];
     is_active: boolean;
 }
@@ -38,8 +41,12 @@ export interface Unit {
 
 export interface Instrument {
     id: string;
-    name: string; // ICP-OES
+    name: string;
+    code?: string;
     model?: string;
+    location?: string;
+    status?: "READY" | "IN_USE" | "MAINTENANCE" | "CALIBRATION";
+    calibration_due_date?: Date;
     is_active: boolean;
 }
 
@@ -47,12 +54,15 @@ export interface Method {
     id: string;
     code: string; // SNI 6989.82:2018
     name: string;
+    is_accredited?: boolean;
 }
 
 export interface Parameter {
     id: string;
     name: string; // COD, Arsenic
+    symbol?: string;
     group?: string; // Logam Berat
+    category?: string;
     unit_id: string;
     is_active: boolean;
 }
@@ -60,6 +70,7 @@ export interface Parameter {
 export interface SampleMatrix {
     id: string;
     name: string; // Air Limbah Domestik
+    code?: string;
     category?: string; // Environment
 }
 
@@ -81,6 +92,7 @@ export interface MatrixParameterRule {
     limit_unit_id?: string;
 
     lod_default?: number; // Limit of Detection
+    loq_default?: number; // Limit of Quantitation
 
     // Commercial
     base_price: number;

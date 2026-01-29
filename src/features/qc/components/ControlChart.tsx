@@ -91,20 +91,69 @@ export default function ControlChart() {
 
     const polylinePoints = mockData.map(d => `${d.x},${d.y}`).join(" ");
 
+    // Calculate last 5 samples trend
+    const lastFiveData = mockData.slice(-5);
+    const lastFiveMean = lastFiveData.length > 0
+        ? parseFloat((lastFiveData.reduce((sum, d) => sum + d.value, 0) / lastFiveData.length).toFixed(1))
+        : 0;
+    const lastFiveMin = Math.min(...lastFiveData.map(d => d.value));
+    const lastFiveMax = Math.max(...lastFiveData.map(d => d.value));
+    const trendDirection = lastFiveData.length >= 2
+        ? (lastFiveData[lastFiveData.length - 1].value - lastFiveData[0].value) > 0
+            ? "RISING" : (lastFiveData[lastFiveData.length - 1].value - lastFiveData[0].value) < -2
+                ? "FALLING" : "STABLE"
+        : "STABLE";
+
+    // Export functions
+    const handleExportCSV = () => {
+        const csvContent = [
+            "Date,Value,Status,Batch,Instrument",
+            ...mockData.map(d => `${d.date},${d.value},${d.status},${MOCK_BATCHES.find(b => b.id === d.batch)?.name || 'N/A'},${MOCK_INSTRUMENTS.find(i => i.id === d.instrument)?.name || 'N/A'}`)
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `qc_control_chart_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+    };
+
+    const handleExportPDF = () => {
+        alert("PDF export initiated. In production, this would generate a PDF report.");
+    };
+
     return (
         <PremiumCard
             title="Control Chart: QC Recovery"
             subtitle="Method: SNI 6989.2:2009"
             action={
-                <select
-                    className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
-                    value={showLastN}
-                    onChange={(e) => setShowLastN(Number(e.target.value))}
-                >
-                    <option value={10}>Last 10</option>
-                    <option value={20}>Last 20</option>
-                    <option value={30}>Last 30</option>
-                </select>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExportCSV}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                        title="Export to CSV"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">download</span>
+                        CSV
+                    </button>
+                    <button
+                        onClick={handleExportPDF}
+                        className="flex items-center gap-1 text-xs text-text-secondary hover:text-primary"
+                        title="Export to PDF"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                    </button>
+                    <select
+                        className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
+                        value={showLastN}
+                        onChange={(e) => setShowLastN(Number(e.target.value))}
+                    >
+                        <option value={10}>Last 10</option>
+                        <option value={20}>Last 20</option>
+                        <option value={30}>Last 30</option>
+                    </select>
+                </div>
             }
         >
             {/* Filters - Enhanced with Batch & Instrument */}
@@ -264,6 +313,68 @@ export default function ControlChart() {
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="w-3 h-0.5 bg-success" /> Mean
+                </div>
+            </div>
+
+            {/* Last 5 Samples Trend Summary */}
+            <div className="mt-4 p-4 rounded-lg border border-primary/20 bg-primary/5">
+                <h4 className="text-sm font-bold text-text-main dark:text-white mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[18px]">trending_up</span>
+                    Last 5 Samples Trend
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {lastFiveData.map((d, i) => (
+                        <div key={i} className={cn(
+                            "text-center p-2 rounded-lg border-2",
+                            d.status === "FAIL" ? "border-danger bg-danger/10" :
+                                d.status === "WARNING" ? "border-warning bg-warning/10" :
+                                    "border-success/30 bg-success/5"
+                        )}>
+                            <p className={cn(
+                                "text-lg font-mono font-bold",
+                                d.status === "FAIL" ? "text-danger" :
+                                    d.status === "WARNING" ? "text-warning" : "text-success"
+                            )}>{d.value}%</p>
+                            <p className="text-[10px] text-text-secondary truncate">{d.date}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Trend Summary Row */}
+                <div className="mt-3 pt-3 border-t border-primary/20 grid grid-cols-4 gap-4 text-xs">
+                    <div className="text-center">
+                        <p className="text-text-secondary">Mean</p>
+                        <p className="font-bold text-text-main dark:text-white">{lastFiveMean}%</p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-text-secondary">Range</p>
+                        <p className="font-mono text-text-main dark:text-white">{lastFiveMin.toFixed(1)} - {lastFiveMax.toFixed(1)}</p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-text-secondary">Trend</p>
+                        <p className={cn(
+                            "font-bold flex items-center justify-center gap-1",
+                            trendDirection === "RISING" ? "text-warning" :
+                                trendDirection === "FALLING" ? "text-danger" : "text-success"
+                        )}>
+                            <span className="material-symbols-outlined text-[14px]">
+                                {trendDirection === "RISING" ? "trending_up" :
+                                    trendDirection === "FALLING" ? "trending_down" : "trending_flat"}
+                            </span>
+                            {trendDirection}
+                        </p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-text-secondary">OOS Risk</p>
+                        <p className={cn(
+                            "font-bold",
+                            lastFiveMean > 115 || lastFiveMean < 85 ? "text-danger" :
+                                lastFiveMean > 110 || lastFiveMean < 90 ? "text-warning" : "text-success"
+                        )}>
+                            {lastFiveMean > 115 || lastFiveMean < 85 ? "HIGH" :
+                                lastFiveMean > 110 || lastFiveMean < 90 ? "MEDIUM" : "LOW"}
+                        </p>
+                    </div>
                 </div>
             </div>
 

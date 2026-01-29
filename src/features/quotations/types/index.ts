@@ -24,6 +24,7 @@ export interface QuotationLineItem {
     id: string; // uuid for list key
     matrix_id: string;
     parameter_id: string;
+    subparameter_id?: string; // Optional sub-parameter
 
     // Auto-filled from Rules but editable
     method_id: string;
@@ -32,4 +33,7 @@ export interface QuotationLineItem {
     qty: number;
     total_price: number;
     lead_time_days: number;
+    due_date_estimate?: Date; // Calculated from lead_time_days
+    package_id?: string; // If added via package
 }
+

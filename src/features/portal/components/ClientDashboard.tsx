@@ -18,10 +18,31 @@ interface SampleProgress {
 
 export default function ClientDashboard() {
     const [searchQuery, setSearchQuery] = useState("");
+    const [searchType, setSearchType] = useState<"all" | "report" | "sample" | "date">("all");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
     const [selectedForDownload, setSelectedForDownload] = useState<Set<string>>(new Set());
+
+    // Mock report numbers for completed orders
+    const getReportNumber = (orderId: string): string | null => {
+        const reportMap: Record<string, string> = {
+            "wo-001": "RPT-2025-0001",
+            "wo-002": "RPT-2025-0002",
+            "wo-003": "RPT-2025-0003",
+        };
+        return reportMap[orderId] || null;
+    };
+
+    // Mock sample names for orders
+    const getSampleNames = (orderId: string): string[] => {
+        const sampleMap: Record<string, string[]> = {
+            "wo-001": ["Water Sample A-1", "Water Sample A-2", "Soil Sample B-1"],
+            "wo-002": ["Food Sample F-1", "Food Sample F-2"],
+            "wo-003": ["Air Sample X-1"],
+        };
+        return sampleMap[orderId] || [`Sample ${orderId}`];
+    };
 
     // Filter for logged in customer (Mock: cust-001)
     const myOrders = useMemo(() => {
@@ -29,10 +50,26 @@ export default function ClientDashboard() {
 
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            orders = orders.filter(w =>
-                w.work_order_no.toLowerCase().includes(q) ||
-                w.id.toLowerCase().includes(q)
-            );
+            orders = orders.filter(w => {
+                switch (searchType) {
+                    case "report":
+                        const reportNo = getReportNumber(w.id);
+                        return reportNo?.toLowerCase().includes(q);
+                    case "sample":
+                        const samples = getSampleNames(w.id);
+                        return samples.some(s => s.toLowerCase().includes(q));
+                    default:
+                        // Search all fields
+                        const report = getReportNumber(w.id);
+                        const sampleNames = getSampleNames(w.id);
+                        return (
+                            w.work_order_no.toLowerCase().includes(q) ||
+                            w.id.toLowerCase().includes(q) ||
+                            (report && report.toLowerCase().includes(q)) ||
+                            sampleNames.some(s => s.toLowerCase().includes(q))
+                        );
+                }
+            });
         }
 
         if (dateFrom) {
@@ -46,7 +83,7 @@ export default function ClientDashboard() {
         }
 
         return orders;
-    }, [searchQuery, dateFrom, dateTo]);
+    }, [searchQuery, searchType, dateFrom, dateTo]);
 
     // Get samples for selected order (mock generated)
     const orderSamples = useMemo((): SampleProgress[] => {
@@ -140,15 +177,38 @@ export default function ClientDashboard() {
             >
                 {/* Search & Filters */}
                 <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <select
+                            className="text-sm border border-slate-200 rounded-lg px-2 py-2 bg-white"
+                            value={searchType}
+                            onChange={(e) => setSearchType(e.target.value as typeof searchType)}
+                        >
+                            <option value="all">All Fields</option>
+                            <option value="report">Report Number</option>
+                            <option value="sample">Sample Name</option>
+                        </select>
+                    </div>
                     <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
                         <span className="material-symbols-outlined text-[18px] text-slate-400">search</span>
                         <input
                             type="text"
-                            placeholder="Search by order ID or name..."
-                            className="w-full min-w-[150px] bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                            placeholder={
+                                searchType === "report" ? "Search by report number (e.g., RPT-2025-0001)..." :
+                                    searchType === "sample" ? "Search by sample name..." :
+                                        "Search by order ID, report, or sample name..."
+                            }
+                            className="w-full min-w-[200px] bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery("")}
+                                className="text-slate-400 hover:text-slate-600"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                            </button>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-500">From:</span>
@@ -168,6 +228,19 @@ export default function ClientDashboard() {
                             onChange={(e) => setDateTo(e.target.value)}
                         />
                     </div>
+                    {(searchQuery || dateFrom || dateTo) && (
+                        <button
+                            onClick={() => {
+                                setSearchQuery("");
+                                setDateFrom("");
+                                setDateTo("");
+                                setSearchType("all");
+                            }}
+                            className="text-xs text-primary hover:underline"
+                        >
+                            Clear All Filters
+                        </button>
+                    )}
                 </div>
 
                 <DenseTable
@@ -201,6 +274,18 @@ export default function ClientDashboard() {
                                     {w.work_order_no}
                                 </div>
                             )
+                        },
+                        {
+                            header: "Report #",
+                            accessorKey: "id",
+                            cell: w => {
+                                const reportNo = getReportNumber(w.id);
+                                return reportNo ? (
+                                    <span className="font-mono text-primary">{reportNo}</span>
+                                ) : (
+                                    <span className="text-slate-400 italic">Pending</span>
+                                );
+                            }
                         },
                         {
                             header: "Date Received",

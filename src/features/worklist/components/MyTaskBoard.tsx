@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { TestTask } from "@/types/master-data";
-import { MOCK_TASKS } from "@/data/mock-db";
+import { MOCK_TASKS, MOCK_RESULTS } from "@/data/mock-db";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -23,6 +23,8 @@ export default function MyTaskBoard() {
     );
     const [sortBy, setSortBy] = useState<SortType>("due_date");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+    const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+    const [showSubmitModal, setShowSubmitModal] = useState(false);
 
     // Calculate overdue tasks
     const now = new Date();
@@ -46,8 +48,18 @@ export default function MyTaskBoard() {
 
     // Mock raw data requirement
     const requiresRawData = (taskId: string): boolean => {
-        // Tasks with certain parameters require raw data upload
         return ["task-001", "task-003"].includes(taskId);
+    };
+
+    // Check if task has raw data uploaded
+    const hasRawData = (taskId: string): boolean => {
+        // Mock: task-001 has data, task-003 does not
+        return taskId === "task-001";
+    };
+
+    // Check if task has result recorded
+    const hasResult = (taskId: string): boolean => {
+        return MOCK_RESULTS.some(r => r.task_id === taskId);
     };
 
     // Priority order for sorting
@@ -97,6 +109,59 @@ export default function MyTaskBoard() {
         { value: "OVERDUE", label: "Overdue", count: overdueTasks.length, color: "text-danger" },
         { value: "COMPLETED", label: "Completed", count: completedTasks.length },
     ];
+
+    const toggleTaskSelection = (taskId: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedTasks(prev =>
+            prev.includes(taskId)
+                ? prev.filter(id => id !== taskId)
+                : [...prev, taskId]
+        );
+    };
+
+    const selectAllCompleted = () => {
+        const completedIds = completedTasks.map(t => t.id);
+        setSelectedTasks(completedIds);
+    };
+
+    // Validation for submit
+    const validateSubmission = () => {
+        const validationResults = selectedTasks.map(taskId => {
+            const task = myTasks.find(t => t.id === taskId);
+            const issues: string[] = [];
+
+            if (task?.status !== "COMPLETED") {
+                issues.push("Task not marked as completed");
+            }
+            if (!hasResult(taskId)) {
+                issues.push("No result recorded");
+            }
+            if (requiresRawData(taskId) && !hasRawData(taskId)) {
+                issues.push("Raw data not uploaded");
+            }
+            const qc = getQCStatus(taskId);
+            if (qc === "FAIL") {
+                issues.push("QC check failed");
+            }
+            if (qc === "PENDING") {
+                issues.push("QC check pending");
+            }
+
+            return {
+                taskId,
+                taskName: task?.parameter_name_snapshot || "Unknown",
+                sampleName: task?.sample_name_snapshot || "Unknown",
+                isValid: issues.length === 0,
+                issues
+            };
+        });
+
+        return validationResults;
+    };
+
+    const validationResults = useMemo(() => validateSubmission(), [selectedTasks]);
+    const canSubmit = validationResults.length > 0 && validationResults.every(v => v.isValid);
 
     return (
         <div className="space-y-6">
@@ -150,6 +215,33 @@ export default function MyTaskBoard() {
                 </div>
             </div>
 
+            {/* Submit for Review Action Bar */}
+            {completedTasks.length > 0 && (
+                <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={selectAllCompleted}
+                            className="text-xs text-primary hover:underline"
+                        >
+                            Select All Completed ({completedTasks.length})
+                        </button>
+                        {selectedTasks.length > 0 && (
+                            <span className="text-xs text-text-secondary">
+                                {selectedTasks.length} task(s) selected
+                            </span>
+                        )}
+                    </div>
+                    <button
+                        onClick={() => setShowSubmitModal(true)}
+                        disabled={selectedTasks.length === 0}
+                        className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <span className="material-symbols-outlined text-[18px]">send</span>
+                        Submit for Review
+                    </button>
+                </div>
+            )}
+
             {/* Overdue Alert Banner */}
             {activeTab !== "OVERDUE" && overdueTasks.length > 0 && (
                 <button
@@ -179,8 +271,26 @@ export default function MyTaskBoard() {
                                 "group relative rounded-lg border p-4 shadow-sm hover:shadow-md transition-all dark:bg-surface-dark",
                                 isOverdue
                                     ? "border-danger/50 bg-danger/5 hover:border-danger"
-                                    : "border-border-light bg-surface-light hover:border-primary/50 dark:border-white/10"
+                                    : selectedTasks.includes(task.id)
+                                        ? "border-primary bg-primary/5"
+                                        : "border-border-light bg-surface-light hover:border-primary/50 dark:border-white/10"
                             )}>
+                                {/* Selection Checkbox for Completed */}
+                                {task.status === "COMPLETED" && (
+                                    <button
+                                        onClick={(e) => toggleTaskSelection(task.id, e)}
+                                        className={cn(
+                                            "absolute top-2 left-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
+                                            selectedTasks.includes(task.id)
+                                                ? "bg-primary border-primary text-white"
+                                                : "border-border-light hover:border-primary bg-white"
+                                        )}
+                                    >
+                                        {selectedTasks.includes(task.id) && (
+                                            <span className="material-symbols-outlined text-[14px]">check</span>
+                                        )}
+                                    </button>
+                                )}
                                 {/* Header */}
                                 <div className="flex justify-between items-start mb-2">
                                     <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">{task.id}</span>
@@ -326,6 +436,79 @@ export default function MyTaskBoard() {
                             ? "All your tasks are on schedule."
                             : "No tasks in this category."}
                     </p>
+                </div>
+            )}
+
+            {/* Submit for Review Modal */}
+            {showSubmitModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] overflow-hidden">
+                        <div className="p-4 border-b border-border-light dark:border-border-dark">
+                            <h3 className="text-lg font-bold text-text-main dark:text-white">Submit for Review</h3>
+                            <p className="text-sm text-text-secondary">Review validation before submitting</p>
+                        </div>
+
+                        <div className="p-4 max-h-[50vh] overflow-y-auto space-y-3">
+                            {validationResults.map(result => (
+                                <div key={result.taskId} className={cn(
+                                    "p-3 rounded-lg border",
+                                    result.isValid
+                                        ? "border-success/30 bg-success/5"
+                                        : "border-danger/30 bg-danger/5"
+                                )}>
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <p className="font-medium text-sm text-text-main dark:text-white">
+                                                {result.taskName}
+                                            </p>
+                                            <p className="text-xs text-text-secondary">{result.sampleName}</p>
+                                        </div>
+                                        <span className={cn(
+                                            "material-symbols-outlined text-[20px]",
+                                            result.isValid ? "text-success" : "text-danger"
+                                        )}>
+                                            {result.isValid ? "check_circle" : "error"}
+                                        </span>
+                                    </div>
+                                    {result.issues.length > 0 && (
+                                        <ul className="mt-2 space-y-1">
+                                            {result.issues.map((issue, idx) => (
+                                                <li key={idx} className="text-xs text-danger flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[12px]">close</span>
+                                                    {issue}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="p-4 border-t border-border-light dark:border-border-dark flex justify-between items-center">
+                            <div className="text-xs text-text-secondary">
+                                {validationResults.filter(v => v.isValid).length} of {validationResults.length} ready to submit
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setShowSubmitModal(false)}
+                                    className="px-4 py-2 text-sm text-text-secondary hover:text-text-main"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        alert(`Submitting ${validationResults.filter(v => v.isValid).length} task(s) for review...`);
+                                        setShowSubmitModal(false);
+                                        setSelectedTasks([]);
+                                    }}
+                                    disabled={!canSubmit}
+                                    className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {canSubmit ? "Submit All" : "Fix Issues First"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
