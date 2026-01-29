@@ -64,4 +64,10 @@ export const NAV_ITEMS: NavItem[] = [
         icon: "description",
         roles: ["admin", "manager"],
     },
+    {
+        title: "Archive",
+        href: "/archive",
+        icon: "inventory_2",
+        roles: ["admin", "manager"],
+    },
 ];

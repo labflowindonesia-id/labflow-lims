@@ -239,31 +239,171 @@ export default function ReviewDetailPanel({ workOrderId, onApprove, onReject }: 
                 </div>
             )}
 
-            {/* Draft Preview Modal (placeholder) */}
+            {/* Draft CoA Preview Modal - Full Featured */}
             {showDraftPreview && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-4xl h-[80vh] shadow-xl flex flex-col">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-4xl h-[85vh] shadow-xl flex flex-col">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-text-main dark:text-white">
-                                Draft CoA Preview
-                            </h3>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-blue-600">picture_as_pdf</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-text-main dark:text-white">
+                                        Draft CoA Preview
+                                    </h3>
+                                    <p className="text-xs text-text-secondary">
+                                        WO: {workOrderId} • Review before approval
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => window.print()}
+                                    className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-main flex items-center gap-1 border border-border-light rounded-lg hover:bg-slate-50"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">print</span>
+                                    Print
+                                </button>
+                                <button
+                                    onClick={() => setShowDraftPreview(false)}
+                                    className="p-1.5 text-text-secondary hover:text-text-main hover:bg-slate-100 rounded-lg"
+                                >
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* PDF Preview Container with Watermark */}
+                        <div className="flex-1 overflow-auto bg-slate-100 rounded-lg p-6 dark:bg-black/20 relative">
+                            {/* Watermark Overlay */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                <div className="transform rotate-[-30deg] text-red-500/20 font-black text-[80px] tracking-widest whitespace-nowrap select-none">
+                                    DRAFT - NOT FINAL
+                                </div>
+                            </div>
+
+                            {/* CoA Document Content */}
+                            <div className="bg-white rounded-lg shadow-lg p-8 relative z-0 max-w-3xl mx-auto">
+                                {/* Header */}
+                                <div className="border-b-2 border-primary pb-4 mb-6">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h1 className="text-2xl font-bold text-primary">LabFlow Testing Laboratory</h1>
+                                            <p className="text-sm text-text-secondary">ISO/IEC 17025:2017 Accredited</p>
+                                            <p className="text-xs text-text-secondary mt-1">Jl. Lab Utama No. 123, Jakarta</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-danger bg-danger/10 px-2 py-1 rounded font-bold mb-2">
+                                                DRAFT PREVIEW
+                                            </div>
+                                            <p className="text-sm font-bold">Report: RPT-2024-{workOrderId.slice(-4)}</p>
+                                            <p className="text-xs text-text-secondary">Version: R01 (Draft)</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Sample Info */}
+                                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                    <div>
+                                        <p className="text-text-secondary">Customer</p>
+                                        <p className="font-medium">PT Maju Jaya Industries</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary">Sample Name</p>
+                                        <p className="font-medium">Inlet Water - Process Unit A</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary">Received Date</p>
+                                        <p className="font-medium">2024-01-25</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary">Analysis Date</p>
+                                        <p className="font-medium">2024-01-26</p>
+                                    </div>
+                                </div>
+
+                                {/* Test Results Table */}
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-bold text-text-main mb-3 border-b pb-2">TEST RESULTS</h3>
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-slate-50">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-medium">Parameter</th>
+                                                <th className="px-3 py-2 text-center font-medium">Result</th>
+                                                <th className="px-3 py-2 text-center font-medium">Unit</th>
+                                                <th className="px-3 py-2 text-center font-medium">Method</th>
+                                                <th className="px-3 py-2 text-center font-medium">Limit</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr className="border-b">
+                                                <td className="px-3 py-2">pH</td>
+                                                <td className="px-3 py-2 text-center font-mono">7.2</td>
+                                                <td className="px-3 py-2 text-center">-</td>
+                                                <td className="px-3 py-2 text-center text-xs">APHA 4500-H⁺</td>
+                                                <td className="px-3 py-2 text-center text-xs">6.0 - 9.0</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                                <td className="px-3 py-2">BOD₅</td>
+                                                <td className="px-3 py-2 text-center font-mono">45</td>
+                                                <td className="px-3 py-2 text-center">mg/L</td>
+                                                <td className="px-3 py-2 text-center text-xs">APHA 5210B</td>
+                                                <td className="px-3 py-2 text-center text-xs">&lt;50</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                                <td className="px-3 py-2">COD</td>
+                                                <td className="px-3 py-2 text-center font-mono">98</td>
+                                                <td className="px-3 py-2 text-center">mg/L</td>
+                                                <td className="px-3 py-2 text-center text-xs">APHA 5220B</td>
+                                                <td className="px-3 py-2 text-center text-xs">&lt;100</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                                <td className="px-3 py-2">TSS</td>
+                                                <td className="px-3 py-2 text-center font-mono">28</td>
+                                                <td className="px-3 py-2 text-center">mg/L</td>
+                                                <td className="px-3 py-2 text-center text-xs">APHA 2540D</td>
+                                                <td className="px-3 py-2 text-center text-xs">&lt;50</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* QC Summary */}
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="material-symbols-outlined text-blue-600 text-[18px]">verified</span>
+                                        <span className="text-sm font-bold text-blue-800">QC Summary</span>
+                                    </div>
+                                    <p className="text-xs text-blue-700">
+                                        All control standards within acceptance limits. Duplicate analysis RPD: 3.2% (limit: &lt;20%).
+                                        Spike recovery: 98.5% (acceptance: 80-120%).
+                                    </p>
+                                </div>
+
+                                {/* Footer Note */}
+                                <div className="text-[10px] text-text-secondary border-t pt-4">
+                                    <p>* Results apply only to the sample(s) tested.</p>
+                                    <p>* This is a DRAFT document - NOT FOR OFFICIAL USE.</p>
+                                    <p className="mt-2 font-bold text-danger">
+                                        WATERMARKED DRAFT - Pending Manager Approval
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex items-center justify-between pt-4 border-t mt-4">
+                            <span className="text-xs text-text-secondary flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">info</span>
+                                This is a preview only. Final CoA will be generated after approval.
+                            </span>
                             <button
                                 onClick={() => setShowDraftPreview(false)}
-                                className="text-text-secondary hover:text-text-main"
+                                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover"
                             >
-                                <span className="material-symbols-outlined">close</span>
+                                Close Preview
                             </button>
-                        </div>
-                        <div className="flex-1 bg-slate-100 rounded-lg flex items-center justify-center dark:bg-black/20">
-                            <div className="text-center">
-                                <span className="material-symbols-outlined text-[64px] text-slate-300">description</span>
-                                <p className="text-sm text-text-secondary mt-2">
-                                    PDF Preview would render here
-                                </p>
-                                <p className="text-xs text-text-secondary">
-                                    (Connects to CoAPreview component)
-                                </p>
-                            </div>
                         </div>
                     </div>
                 </div>
