@@ -106,6 +106,39 @@ export default function TaskAssignmentTable() {
         return skills.length > 0; // All analysts with skills are "qualified"
     };
 
+    // Check for instrument conflicts (same instrument, same day, different task)
+    const getInstrumentConflicts = (instrumentId: string | undefined, taskId: string, dueDate: Date): string[] => {
+        if (!instrumentId) return [];
+        const sameDayTasks = tasks.filter(t =>
+            t.id !== taskId &&
+            t.instrument_id_snapshot === instrumentId &&
+            t.status !== "COMPLETED" &&
+            t.dueDate.toDateString() === dueDate.toDateString()
+        );
+        return sameDayTasks.map(t => t.sample_name_snapshot || "Unknown Sample");
+    };
+
+    // Check for analyst conflicts (same analyst, same day, multiple tasks)
+    const getAnalystConflicts = (analystId: string | undefined, taskId: string, dueDate: Date): number => {
+        if (!analystId) return 0;
+        const sameDayTasks = tasks.filter(t =>
+            t.id !== taskId &&
+            t.assigned_to_user_id === analystId &&
+            t.status !== "COMPLETED" &&
+            t.dueDate.toDateString() === dueDate.toDateString()
+        );
+        return sameDayTasks.length;
+    };
+
+    // Get workload for an analyst on a given day
+    const getAnalystWorkload = (analystId: string, date: Date): { count: number; overloaded: boolean } => {
+        const dailyTasks = tasks.filter(t =>
+            t.assigned_to_user_id === analystId &&
+            t.dueDate.toDateString() === date.toDateString()
+        );
+        return { count: dailyTasks.length, overloaded: dailyTasks.length >= 5 };
+    };
+
     // Filter work orders that are RECEIVED or IN_PROGRESS only (as per blueprint)
     const confirmedWorkOrders = MOCK_WORK_ORDERS.filter(wo =>
         wo.status === "RECEIVED" || wo.status === "IN_PROGRESS"
@@ -346,12 +379,41 @@ export default function TaskAssignmentTable() {
                                                 </option>
                                             ))}
                                         </select>
-                                        {task.assigned_to_user_id && (
-                                            <span className="text-[10px] text-success flex items-center gap-1 mt-1">
-                                                <span className="material-symbols-outlined text-[12px]">verified</span>
-                                                Qualified
-                                            </span>
-                                        )}
+                                        {/* Conflict Warnings */}
+                                        {(() => {
+                                            const instrumentConflicts = getInstrumentConflicts(task.instrument_id_snapshot, task.id, task.dueDate);
+                                            const analystConflicts = getAnalystConflicts(task.assigned_to_user_id, task.id, task.dueDate);
+                                            const hasConflicts = instrumentConflicts.length > 0 || analystConflicts > 0;
+
+                                            return (
+                                                <div className="mt-1 space-y-0.5">
+                                                    {task.assigned_to_user_id && !hasConflicts && (
+                                                        <span className="text-[10px] text-success flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[12px]">verified</span>
+                                                            Qualified
+                                                        </span>
+                                                    )}
+                                                    {instrumentConflicts.length > 0 && (
+                                                        <span className="text-[10px] text-warning flex items-center gap-1" title={`Instrument conflict with: ${instrumentConflicts.join(", ")}`}>
+                                                            <span className="material-symbols-outlined text-[12px]">warning</span>
+                                                            Instr. busy ({instrumentConflicts.length})
+                                                        </span>
+                                                    )}
+                                                    {analystConflicts > 3 && (
+                                                        <span className="text-[10px] text-danger flex items-center gap-1" title={`Analyst has ${analystConflicts} other tasks on this day`}>
+                                                            <span className="material-symbols-outlined text-[12px]">error</span>
+                                                            Overloaded ({analystConflicts + 1} tasks)
+                                                        </span>
+                                                    )}
+                                                    {analystConflicts > 0 && analystConflicts <= 3 && (
+                                                        <span className="text-[10px] text-blue-500 flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[12px]">info</span>
+                                                            +{analystConflicts} same day
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-3 py-3 text-center">
                                         <span className={cn(

@@ -21,8 +21,31 @@ export default function ClientDashboard() {
     const [searchType, setSearchType] = useState<"all" | "report" | "sample" | "date">("all");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
+    const [matrixFilter, setMatrixFilter] = useState<string>("");
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
     const [selectedForDownload, setSelectedForDownload] = useState<Set<string>>(new Set());
+
+    // Matrix types for filter
+    const matrixTypes = [
+        { value: "", label: "All Matrix Types" },
+        { value: "WATER", label: "Water" },
+        { value: "SOIL", label: "Soil" },
+        { value: "AIR", label: "Air" },
+        { value: "FOOD", label: "Food" },
+        { value: "OTHER", label: "Other" },
+    ];
+
+    // Mock matrix type mapping for orders
+    const getMatrixType = (orderId: string): string => {
+        const matrixMap: Record<string, string> = {
+            "wo-001": "WATER",
+            "wo-002": "FOOD",
+            "wo-003": "AIR",
+            "wo-004": "SOIL",
+            "wo-005": "WATER",
+        };
+        return matrixMap[orderId] || "OTHER";
+    };
 
     // Mock report numbers for completed orders
     const getReportNumber = (orderId: string): string | null => {
@@ -82,8 +105,13 @@ export default function ClientDashboard() {
             orders = orders.filter(w => w.received_date <= to);
         }
 
+        // Matrix filter
+        if (matrixFilter) {
+            orders = orders.filter(w => getMatrixType(w.id) === matrixFilter);
+        }
+
         return orders;
-    }, [searchQuery, searchType, dateFrom, dateTo]);
+    }, [searchQuery, searchType, dateFrom, dateTo, matrixFilter]);
 
     // Get samples for selected order (mock generated)
     const orderSamples = useMemo((): SampleProgress[] => {
@@ -228,13 +256,24 @@ export default function ClientDashboard() {
                             onChange={(e) => setDateTo(e.target.value)}
                         />
                     </div>
-                    {(searchQuery || dateFrom || dateTo) && (
+                    {/* Matrix Filter */}
+                    <select
+                        className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                        value={matrixFilter}
+                        onChange={(e) => setMatrixFilter(e.target.value)}
+                    >
+                        {matrixTypes.map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                    </select>
+                    {(searchQuery || dateFrom || dateTo || matrixFilter) && (
                         <button
                             onClick={() => {
                                 setSearchQuery("");
                                 setDateFrom("");
                                 setDateTo("");
                                 setSearchType("all");
+                                setMatrixFilter("");
                             }}
                             className="text-xs text-primary hover:underline"
                         >

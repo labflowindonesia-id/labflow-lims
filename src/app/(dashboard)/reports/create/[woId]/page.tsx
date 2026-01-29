@@ -58,6 +58,41 @@ export default function CreateReportPage() {
     const [emailRecipients, setEmailRecipients] = useState("customer@example.com");
     const [emailMessage, setEmailMessage] = useState("Please find attached the Certificate of Analysis for your samples.");
 
+    // NEW: Revision history for auto-versioning
+    interface RevisionEntry {
+        version: string;
+        createdAt: Date;
+        reason?: string;
+        lockedAt?: Date;
+    }
+    const [revisionHistory, setRevisionHistory] = useState<RevisionEntry[]>([
+        { version: "R01", createdAt: new Date("2025-01-25"), reason: "Initial release" }
+    ]);
+    const [showRevisionModal, setShowRevisionModal] = useState(false);
+    const [revisionReason, setRevisionReason] = useState("");
+
+    // Auto-version function - creates new version when revision occurs after lock
+    const handleRevisionRequest = () => {
+        if (!revisionReason.trim()) return;
+
+        const currentVersionNum = parseInt(reportVersion.substring(1));
+        const nextVersion = `R${String(currentVersionNum + 1).padStart(2, "0")}`;
+
+        // Lock current version
+        setRevisionHistory(prev => [
+            ...prev.map(r => r.version === reportVersion ? { ...r, lockedAt: new Date() } : r),
+            { version: nextVersion, createdAt: new Date(), reason: revisionReason }
+        ]);
+
+        setReportVersion(nextVersion);
+        setIsLocked(false);
+        setIsPublished(false);
+        setSignature(null);
+        setRevisionReason("");
+        setShowRevisionModal(false);
+        alert(`New version ${nextVersion} created. Previous version ${reportVersion} has been locked.`);
+    };
+
     const templates: { id: TemplateType; name: string; description: string }[] = [
         { id: "standard", name: "Standard CoA", description: "Default certificate format" },
         { id: "detailed", name: "Detailed Report", description: "Includes method details and QC data" },
@@ -223,27 +258,62 @@ export default function CreateReportPage() {
                         </div>
                     </PremiumCard>
 
-                    {/* Version */}
-                    <PremiumCard title="Version">
-                        <div className="flex gap-2">
-                            {["R01", "R02", "R03"].map(v => (
+                    {/* Version & Revision History */}
+                    <PremiumCard title="Version & History">
+                        <div className="space-y-3">
+                            {/* Current Version */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-text-main dark:text-white">
+                                    Current: <span className="text-primary font-bold">{reportVersion}</span>
+                                </span>
+                                {isLocked && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-danger/20 text-danger font-bold flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[12px]">lock</span>
+                                        LOCKED
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Revision History */}
+                            <div className="space-y-1 max-h-28 overflow-y-auto">
+                                {revisionHistory.map((rev) => (
+                                    <div
+                                        key={rev.version}
+                                        className={cn(
+                                            "flex items-center justify-between p-2 rounded text-xs",
+                                            rev.version === reportVersion
+                                                ? "bg-primary/10 border border-primary/30"
+                                                : "bg-slate-50 dark:bg-white/5"
+                                        )}
+                                    >
+                                        <div>
+                                            <span className="font-bold">{rev.version}</span>
+                                            <span className="text-text-secondary ml-2">{rev.reason}</span>
+                                        </div>
+                                        {rev.lockedAt && (
+                                            <span className="material-symbols-outlined text-[14px] text-slate-400" title={`Locked: ${rev.lockedAt.toLocaleDateString()}`}>
+                                                lock
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Create New Revision Button */}
+                            {isPublished && (
                                 <button
-                                    key={v}
-                                    onClick={() => setReportVersion(v)}
-                                    className={cn(
-                                        "flex-1 py-2 rounded-lg text-sm font-bold transition-all",
-                                        reportVersion === v
-                                            ? "bg-primary text-white"
-                                            : "bg-slate-100 text-text-secondary hover:bg-slate-200 dark:bg-white/10"
-                                    )}
+                                    onClick={() => setShowRevisionModal(true)}
+                                    className="w-full px-3 py-2 bg-warning/20 text-warning border border-warning/30 rounded-lg text-xs font-medium hover:bg-warning/30 flex items-center justify-center gap-1"
                                 >
-                                    {v}
+                                    <span className="material-symbols-outlined text-[14px]">edit_note</span>
+                                    Create New Revision
                                 </button>
-                            ))}
+                            )}
+
+                            <p className="text-[10px] text-text-secondary">
+                                Anti-silent-edit: New versions auto-lock previous releases
+                            </p>
                         </div>
-                        <p className="text-xs text-text-secondary mt-2">
-                            {reportVersion === "R01" ? "Initial release" : `Revision ${reportVersion.substring(1)}`}
-                        </p>
                     </PremiumCard>
 
                     {/* NEW: Sample Selection */}
@@ -522,6 +592,76 @@ export default function CreateReportPage() {
                             >
                                 <span className="material-symbols-outlined text-[18px]">send</span>
                                 Send Email
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Revision Request Modal */}
+            {showRevisionModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-md shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-warning/20 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-warning">edit_note</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-text-main dark:text-white">Create New Revision</h3>
+                                <p className="text-xs text-text-secondary">Current version {reportVersion} will be locked</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-text-main dark:text-white mb-1">
+                                    Revision Reason *
+                                </label>
+                                <select
+                                    value={revisionReason}
+                                    onChange={(e) => setRevisionReason(e.target.value)}
+                                    className="w-full border border-border-light rounded-lg p-2 text-sm dark:border-border-dark dark:bg-background-dark"
+                                >
+                                    <option value="">Select reason...</option>
+                                    <option value="Customer requested correction">Customer requested correction</option>
+                                    <option value="Typographical error">Typographical error</option>
+                                    <option value="Additional tests added">Additional tests added</option>
+                                    <option value="QC issue resolved">QC issue resolved</option>
+                                    <option value="Regulatory compliance update">Regulatory compliance update</option>
+                                </select>
+                            </div>
+
+                            <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                                <div className="flex items-start gap-2">
+                                    <span className="material-symbols-outlined text-warning text-[16px] mt-0.5">info</span>
+                                    <div className="text-xs text-text-main dark:text-white">
+                                        <p className="font-medium">Anti-Silent-Edit Policy</p>
+                                        <p className="text-text-secondary mt-1">
+                                            Creating a new revision will permanently lock version {reportVersion}.
+                                            A new draft ({reportVersion === "R01" ? "R02" : `R${String(parseInt(reportVersion.substring(1)) + 1).padStart(2, "0")}`}) will be created.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={() => {
+                                    setShowRevisionModal(false);
+                                    setRevisionReason("");
+                                }}
+                                className="flex-1 px-4 py-2 text-text-secondary hover:text-text-main"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRevisionRequest}
+                                disabled={!revisionReason}
+                                className="flex-1 px-4 py-2 bg-warning text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">add</span>
+                                Create Revision
                             </button>
                         </div>
                     </div>

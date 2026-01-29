@@ -368,6 +368,21 @@ export default function ReviewQueueTable() {
                                 </div>
                             ) : (
                                 <>
+                                    {/* Preview Draft CoA - Watermarked */}
+                                    <div className="space-y-2 pb-4 border-b border-border-light dark:border-border-dark">
+                                        <label className="text-sm font-medium text-text-main dark:text-white">Document Preview</label>
+                                        <button
+                                            onClick={() => alert(`Generating Draft CoA (Watermarked) for ${selectedData.sampleName}...\\n\\nThis would open a PDF preview with "DRAFT - NOT FOR RELEASE" watermark.`)}
+                                            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 text-text-main rounded-lg text-sm font-medium hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+                                            Preview Draft CoA (Watermarked)
+                                        </button>
+                                        <p className="text-[10px] text-text-secondary">
+                                            Draft includes &quot;DRAFT - NOT FOR RELEASE&quot; watermark
+                                        </p>
+                                    </div>
+
                                     {/* Request Revision */}
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-text-main dark:text-white">Request Revision</label>
