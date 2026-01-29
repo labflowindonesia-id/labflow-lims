@@ -2,38 +2,97 @@
 
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { MOCK_TASKS, MOCK_USERS, MOCK_INSTRUMENTS, MOCK_SUBMISSIONS } from "@/data/mock-db";
-import { useMemo } from "react";
+import { MOCK_TASKS, MOCK_USERS, MOCK_INSTRUMENTS, MOCK_SUBMISSIONS, MOCK_CUSTOMERS } from "@/data/mock-db";
+import { useMemo, useState, useRef, useEffect } from "react";
+
+type SearchResult = {
+    type: "task" | "customer" | "sample";
+    id: string;
+    title: string;
+    subtitle: string;
+    href: string;
+};
 
 export default function DashboardPage() {
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showSearchResults, setShowSearchResults] = useState(false);
+    const [selectedInstrument, setSelectedInstrument] = useState<string | null>(null);
+    const searchRef = useRef<HTMLDivElement>(null);
+
+    // Close search dropdown on outside click
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setShowSearchResults(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     // 1. CALCULATE DYNAMIC METRICS
     const metrics = useMemo(() => {
         const activeTasks = MOCK_TASKS.filter(t => t.status !== "COMPLETED" && t.status !== "CANCELLED");
         const urgentTasks = activeTasks.filter(t => t.priority === "URGENT" || t.priority === "HIGH");
         const pendingReviews = MOCK_SUBMISSIONS.filter(s => s.status === "SUBMITTED").length;
-
-        // Mock Revenue Calculation (Randomized base + active value)
         const mockRevenue = 428000 + (activeTasks.length * 75000);
-
-        // Mock TAT Critical Count (Tasks due today or past due)
-        const criticalTAT = activeTasks.filter(t => new Date(t.due_date) <= new Date()).length;
+        const now = new Date();
+        const overdueTasks = activeTasks.filter(t => new Date(t.due_date) < now);
+        const criticalTAT = overdueTasks.length;
 
         return {
             totalPending: activeTasks.length,
             urgentCount: urgentTasks.length,
             revenue: mockRevenue,
             criticalTAT,
-            pendingReviews
+            pendingReviews,
+            overdueTasks
         };
     }, []);
 
-    // 2. PREPARE TABLE DATA (Top 5 Urgent/Recent)
+    // 2. SEARCH RESULTS
+    const searchResults = useMemo<SearchResult[]>(() => {
+        if (!searchQuery.trim()) return [];
+        const q = searchQuery.toLowerCase();
+        const results: SearchResult[] = [];
+
+        // Search tasks
+        MOCK_TASKS.forEach(task => {
+            if (task.parameter_name_snapshot.toLowerCase().includes(q) ||
+                task.sample_name_snapshot.toLowerCase().includes(q) ||
+                task.id.toLowerCase().includes(q)) {
+                results.push({
+                    type: "task",
+                    id: task.id,
+                    title: task.parameter_name_snapshot,
+                    subtitle: `${task.sample_name_snapshot} • ${task.status.replace("_", " ")}`,
+                    href: `/testing/${task.id}`
+                });
+            }
+        });
+
+        // Search customers
+        MOCK_CUSTOMERS.forEach(cust => {
+            if (cust.name.toLowerCase().includes(q)) {
+                results.push({
+                    type: "customer",
+                    id: cust.id,
+                    title: cust.name,
+                    subtitle: cust.address || "Customer",
+                    href: `/quotations?customer=${cust.id}`
+                });
+            }
+        });
+
+        return results.slice(0, 8);
+    }, [searchQuery]);
+
+    // 3. PREPARE TABLE DATA (Top 5 Urgent/Recent)
     const recentTasks = [...MOCK_TASKS]
-        .sort((a, b) => b.priority === "HIGH" ? -1 : 1) // Simple sort by priority
+        .sort((a, b) => (b.priority === "HIGH" || b.priority === "URGENT") ? -1 : 1)
         .slice(0, 5);
 
-    // 3. INSTRUMENT STATUS LOGIC
-    // Simple mock logic: If instrument has an active task assigned, it's "Running"
+    // 4. INSTRUMENT STATUS LOGIC
     const instrumentStatus = MOCK_INSTRUMENTS.map(inst => {
         const activeTask = MOCK_TASKS.find(t =>
             t.instrument_id_snapshot === inst.id && t.status === "IN_PROGRESS"
@@ -42,19 +101,70 @@ export default function DashboardPage() {
             ...inst,
             status: activeTask ? "Running" : "Idle",
             taskName: activeTask?.parameter_name_snapshot,
-            timeLeft: activeTask ? "12m remaining" : "(Ready)"
+            sampleName: activeTask?.sample_name_snapshot,
+            timeLeft: activeTask ? "~12m remaining" : "(Ready)"
         };
     });
 
     return (
         <>
-            {/* Page Header */}
+            {/* Page Header with Search */}
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight text-text-main dark:text-white">Analytics Overview</h2>
                     <p className="mt-1 text-sm text-text-secondary">Real-time laboratory performance metrics.</p>
                 </div>
                 <div className="flex items-center gap-3">
+                    {/* Working Search Bar */}
+                    <div ref={searchRef} className="relative">
+                        <div className="flex items-center gap-2 rounded-lg border border-border-light bg-white px-3 py-2 shadow-sm dark:border-border-dark dark:bg-surface-dark">
+                            <span className="material-symbols-outlined text-[18px] text-text-secondary">search</span>
+                            <input
+                                type="text"
+                                placeholder="Search tasks, customers..."
+                                className="w-48 bg-transparent text-sm text-text-main placeholder:text-text-secondary focus:outline-none dark:text-white"
+                                value={searchQuery}
+                                onChange={(e) => {
+                                    setSearchQuery(e.target.value);
+                                    setShowSearchResults(true);
+                                }}
+                                onFocus={() => setShowSearchResults(true)}
+                            />
+                        </div>
+                        {/* Search Results Dropdown */}
+                        {showSearchResults && searchResults.length > 0 && (
+                            <div className="absolute right-0 top-12 z-50 w-80 rounded-lg border border-border-light bg-white shadow-lg dark:border-border-dark dark:bg-surface-dark">
+                                <div className="p-2">
+                                    {searchResults.map(result => (
+                                        <Link
+                                            key={`${result.type}-${result.id}`}
+                                            href={result.href}
+                                            className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-background-light dark:hover:bg-background-dark"
+                                            onClick={() => setShowSearchResults(false)}
+                                        >
+                                            <span className={cn(
+                                                "material-symbols-outlined text-[18px]",
+                                                result.type === "task" ? "text-primary" :
+                                                    result.type === "customer" ? "text-success" : "text-warning"
+                                            )}>
+                                                {result.type === "task" ? "science" :
+                                                    result.type === "customer" ? "business" : "inventory_2"}
+                                            </span>
+                                            <div className="flex-1 overflow-hidden">
+                                                <p className="truncate text-sm font-medium text-text-main dark:text-white">{result.title}</p>
+                                                <p className="truncate text-xs text-text-secondary">{result.subtitle}</p>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {showSearchResults && searchQuery && searchResults.length === 0 && (
+                            <div className="absolute right-0 top-12 z-50 w-80 rounded-lg border border-border-light bg-white p-4 shadow-lg dark:border-border-dark dark:bg-surface-dark">
+                                <p className="text-center text-sm text-text-secondary">No results found</p>
+                            </div>
+                        )}
+                    </div>
                     <button className="flex items-center gap-2 rounded-lg border border-border-light bg-white px-4 py-2 text-sm font-medium text-text-main shadow-sm transition-colors hover:bg-background-light dark:border-border-dark dark:bg-surface-dark dark:text-white dark:hover:bg-background-dark">
                         <span className="material-symbols-outlined text-[18px]">download</span>
                         Export Report
@@ -68,102 +178,139 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* KPI Cards Section */}
+            {/* KPI Cards Section - Now Clickable */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                {/* Revenue Card (Preserved Style) */}
-                <div className="rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-shadow hover:shadow-md dark:border-border-dark dark:bg-surface-dark">
-                    <div className="mb-2 flex items-start justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-text-secondary">Est. Revenue (WIP)</p>
-                            <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
-                                ${metrics.revenue.toLocaleString()}
-                            </h3>
-                        </div>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-xs font-medium text-success ring-1 ring-inset ring-success/20">
-                            <span className="material-symbols-outlined text-[14px]">trending_up</span>
-                            12.5%
-                        </span>
-                    </div>
-                    <div className="mt-4 h-16 w-full">
-                        <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                                <linearGradient id="gradient-revenue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" className="chart-gradient-stop-1" />
-                                    <stop offset="100%" className="chart-gradient-stop-2" />
-                                </linearGradient>
-                            </defs>
-                            <path d="M0 45 C50 45, 50 15, 100 15 C150 15, 150 35, 200 25 C250 15, 250 5, 300 5 V 60 H 0 Z" fill="url(#gradient-revenue)" />
-                            <path d="M0 45 C50 45, 50 15, 100 15 C150 15, 150 35, 200 25 C250 15, 250 5, 300 5" stroke="#0384c4" strokeWidth="2" fill="none" />
-                        </svg>
-                    </div>
-                    <p className="mt-2 text-xs text-text-secondary">Vs. last month ($380,444)</p>
-                </div>
-
-                {/* TAT Warnings Card (Connected to metrics.criticalTAT) */}
-                <div className="relative overflow-hidden rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-shadow hover:shadow-md dark:border-border-dark dark:bg-surface-dark">
-                    <div className="relative z-10 mb-2 flex items-start justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-text-secondary">TAT Warnings</p>
-                            <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
-                                {metrics.criticalTAT}
-                            </h3>
-                        </div>
-                        {metrics.criticalTAT > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-2 py-1 text-xs font-medium text-danger ring-1 ring-inset ring-danger/20">
-                                <span className="material-symbols-outlined text-[14px]">warning</span>
-                                Action Needed
-                            </span>
-                        ) : (
+                {/* Revenue Card - Links to Reports */}
+                <Link href="/reports" className="block">
+                    <div className="group rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-all hover:shadow-md hover:border-primary/30 dark:border-border-dark dark:bg-surface-dark">
+                        <div className="mb-2 flex items-start justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-text-secondary">Est. Revenue (WIP)</p>
+                                <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
+                                    ${metrics.revenue.toLocaleString()}
+                                </h3>
+                            </div>
                             <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-xs font-medium text-success ring-1 ring-inset ring-success/20">
-                                <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                                On Track
+                                <span className="material-symbols-outlined text-[14px]">trending_up</span>
+                                12.5%
                             </span>
-                        )}
-                    </div>
-                    <div className="relative z-10 mt-4 h-16 w-full">
-                        <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                                <linearGradient id="gradient-tat" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#ef4444" stopOpacity="0.2" />
-                                    <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
-                                </linearGradient>
-                            </defs>
-                            <path d="M0 30 C40 30, 60 50, 100 45 C140 40, 160 10, 200 15 C240 20, 260 40, 300 35 V 60 H 0 Z" fill="url(#gradient-tat)" />
-                            <path d="M0 30 C40 30, 60 50, 100 45 C140 40, 160 10, 200 15 C240 20, 260 40, 300 35" stroke="#ef4444" strokeWidth="2" fill="none" />
-                        </svg>
-                    </div>
-                    <p className="relative z-10 mt-2 text-xs text-text-secondary">Tasks due today or overdue</p>
-                </div>
-
-                {/* Pending Orders Card (Connected to metrics.totalPending) */}
-                <div className="rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-shadow hover:shadow-md dark:border-border-dark dark:bg-surface-dark">
-                    <div className="mb-2 flex items-start justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-text-secondary">Active Tasks</p>
-                            <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
-                                {metrics.totalPending}
-                            </h3>
                         </div>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning ring-1 ring-inset ring-warning/20">
-                            <span className="material-symbols-outlined text-[14px]">timer</span>
-                            {metrics.urgentCount} High Prio
-                        </span>
+                        <div className="mt-4 h-16 w-full">
+                            <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="gradient-revenue" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" className="chart-gradient-stop-1" />
+                                        <stop offset="100%" className="chart-gradient-stop-2" />
+                                    </linearGradient>
+                                </defs>
+                                <path d="M0 45 C50 45, 50 15, 100 15 C150 15, 150 35, 200 25 C250 15, 250 5, 300 5 V 60 H 0 Z" fill="url(#gradient-revenue)" />
+                                <path d="M0 45 C50 45, 50 15, 100 15 C150 15, 150 35, 200 25 C250 15, 250 5, 300 5" stroke="#0384c4" strokeWidth="2" fill="none" />
+                            </svg>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                            <p className="text-xs text-text-secondary">Vs. last month ($380,444)</p>
+                            <span className="text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">View Reports →</span>
+                        </div>
                     </div>
-                    <div className="mt-4 h-16 w-full">
-                        <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                                <linearGradient id="gradient-pending" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.2" />
-                                    <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
-                                </linearGradient>
-                            </defs>
-                            <path d="M0 50 C50 45, 80 40, 120 35 C160 30, 180 25, 220 20 C260 15, 280 10, 300 5 V 60 H 0 Z" fill="url(#gradient-pending)" />
-                            <path d="M0 50 C50 45, 80 40, 120 35 C160 30, 180 25, 220 20 C260 15, 280 10, 300 5" stroke="#f59e0b" strokeWidth="2" fill="none" />
-                        </svg>
+                </Link>
+
+                {/* TAT Warnings Card - Links to Worklist with Overdue Filter */}
+                <Link href="/worklist?filter=overdue" className="block">
+                    <div className="group relative overflow-hidden rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-all hover:shadow-md hover:border-danger/30 dark:border-border-dark dark:bg-surface-dark">
+                        <div className="relative z-10 mb-2 flex items-start justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-text-secondary">TAT Warnings</p>
+                                <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
+                                    {metrics.criticalTAT}
+                                </h3>
+                            </div>
+                            {metrics.criticalTAT > 0 ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-2 py-1 text-xs font-medium text-danger ring-1 ring-inset ring-danger/20">
+                                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                                    Action Needed
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-xs font-medium text-success ring-1 ring-inset ring-success/20">
+                                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                                    On Track
+                                </span>
+                            )}
+                        </div>
+                        <div className="relative z-10 mt-4 h-16 w-full">
+                            <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="gradient-tat" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#ef4444" stopOpacity="0.2" />
+                                        <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                <path d="M0 30 C40 30, 60 50, 100 45 C140 40, 160 10, 200 15 C240 20, 260 40, 300 35 V 60 H 0 Z" fill="url(#gradient-tat)" />
+                                <path d="M0 30 C40 30, 60 50, 100 45 C140 40, 160 10, 200 15 C240 20, 260 40, 300 35" stroke="#ef4444" strokeWidth="2" fill="none" />
+                            </svg>
+                        </div>
+                        <div className="relative z-10 mt-2 flex items-center justify-between">
+                            <p className="text-xs text-text-secondary">Tasks due today or overdue</p>
+                            <span className="text-xs font-medium text-danger opacity-0 transition-opacity group-hover:opacity-100">View Overdue →</span>
+                        </div>
                     </div>
-                    <p className="mt-2 text-xs text-text-secondary">{metrics.pendingReviews} awaiting Manager Review</p>
-                </div>
+                </Link>
+
+                {/* Active Tasks Card - Links to Worklist */}
+                <Link href="/worklist" className="block">
+                    <div className="group rounded-xl border border-border-light bg-surface-light p-5 shadow-sm transition-all hover:shadow-md hover:border-warning/30 dark:border-border-dark dark:bg-surface-dark">
+                        <div className="mb-2 flex items-start justify-between">
+                            <div>
+                                <p className="text-sm font-medium text-text-secondary">Active Tasks</p>
+                                <h3 className="mt-1 text-2xl font-bold tracking-tight text-text-main dark:text-white">
+                                    {metrics.totalPending}
+                                </h3>
+                            </div>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning ring-1 ring-inset ring-warning/20">
+                                <span className="material-symbols-outlined text-[14px]">timer</span>
+                                {metrics.urgentCount} High Prio
+                            </span>
+                        </div>
+                        <div className="mt-4 h-16 w-full">
+                            <svg width="100%" height="100%" viewBox="0 0 300 60" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="gradient-pending" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.2" />
+                                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                <path d="M0 50 C50 45, 80 40, 120 35 C160 30, 180 25, 220 20 C260 15, 280 10, 300 5 V 60 H 0 Z" fill="url(#gradient-pending)" />
+                                <path d="M0 50 C50 45, 80 40, 120 35 C160 30, 180 25, 220 20 C260 15, 280 10, 300 5" stroke="#f59e0b" strokeWidth="2" fill="none" />
+                            </svg>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                            <p className="text-xs text-text-secondary">{metrics.pendingReviews} awaiting Manager Review</p>
+                            <span className="text-xs font-medium text-warning opacity-0 transition-opacity group-hover:opacity-100">View Tasks →</span>
+                        </div>
+                    </div>
+                </Link>
             </div>
+
+            {/* Overdue/Critical Tasks Alert Section */}
+            {metrics.overdueTasks.length > 0 && (
+                <div className="rounded-xl border border-danger/30 bg-danger/5 p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10">
+                            <span className="material-symbols-outlined text-danger">priority_high</span>
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-semibold text-danger">Critical: {metrics.overdueTasks.length} Overdue Task(s)</h4>
+                            <p className="text-sm text-text-secondary">
+                                {metrics.overdueTasks.map(t => t.parameter_name_snapshot).join(", ")}
+                            </p>
+                        </div>
+                        <Link href="/worklist?filter=overdue">
+                            <button className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-danger/90">
+                                View All
+                            </button>
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* Urgent Tasks Table Section */}
             <div className="flex flex-col gap-4">
@@ -188,11 +335,15 @@ export default function DashboardPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-light bg-surface-light dark:divide-border-dark dark:bg-surface-dark">
-                                {recentTasks.map((task, idx) => {
+                                {recentTasks.map((task) => {
                                     const assignedUser = MOCK_USERS.find(u => u.id === task.assigned_to_user_id);
+                                    const isOverdue = new Date(task.due_date) < new Date();
 
                                     return (
-                                        <tr key={task.id} className="group transition-colors hover:bg-primary/5 dark:hover:bg-primary/5">
+                                        <tr key={task.id} className={cn(
+                                            "group transition-colors hover:bg-primary/5 dark:hover:bg-primary/5",
+                                            isOverdue && "bg-danger/5"
+                                        )}>
                                             <td className="px-6 py-3 font-medium tabular-nums text-text-main dark:text-white">{task.id}</td>
                                             <td className="px-6 py-3 text-text-main dark:text-white">
                                                 <div className="flex flex-col">
@@ -218,7 +369,11 @@ export default function DashboardPage() {
                                                     <span className="text-text-secondary">{assignedUser?.full_name || "Unassigned"}</span>
                                                 </div>
                                             </td>
-                                            <td className="tabular-nums text-text-secondary px-6 py-3">
+                                            <td className={cn(
+                                                "tabular-nums px-6 py-3",
+                                                isOverdue ? "font-medium text-danger" : "text-text-secondary"
+                                            )}>
+                                                {isOverdue && <span className="material-symbols-outlined mr-1 text-[14px] align-middle">schedule</span>}
                                                 {new Date(task.due_date).toLocaleDateString()}
                                             </td>
                                             <td className="px-6 py-3">
@@ -249,34 +404,69 @@ export default function DashboardPage() {
 
             {/* Secondary Info Section */}
             <div className="grid grid-cols-1 gap-6 pb-8 lg:grid-cols-2">
-                {/* System Status (Dynamic Instrument List) */}
+                {/* Instrument Status (Interactive) */}
                 <div className="rounded-xl border border-border-light bg-surface-light p-5 shadow-sm dark:border-border-dark dark:bg-surface-dark">
                     <div className="mb-4 flex items-center justify-between">
                         <h3 className="font-bold text-text-main dark:text-white">Instrument Status</h3>
-                        <button className="text-text-secondary hover:text-primary">
-                            <span className="material-symbols-outlined">more_horiz</span>
-                        </button>
+                        <Link href="/settings?tab=instruments" className="text-text-secondary hover:text-primary">
+                            <span className="material-symbols-outlined">settings</span>
+                        </Link>
                     </div>
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                         {instrumentStatus.slice(0, 4).map(inst => (
-                            <div key={inst.id} className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className={cn(
-                                        "h-2.5 w-2.5 rounded-full",
-                                        inst.status === "Running" ? "bg-success animate-pulse" :
-                                            !inst.is_active ? "bg-danger" : "bg-slate-300"
-                                    )}></div>
-                                    <span className="text-sm font-medium text-text-main dark:text-white">{inst.name}</span>
-                                </div>
-                                <span className="text-xs text-text-secondary">
-                                    {inst.status} {inst.status === "Running" ? `- ${inst.taskName}` : ""}
-                                </span>
+                            <div key={inst.id}>
+                                <button
+                                    onClick={() => setSelectedInstrument(selectedInstrument === inst.id ? null : inst.id)}
+                                    className={cn(
+                                        "w-full flex items-center justify-between rounded-lg p-2 transition-colors",
+                                        selectedInstrument === inst.id
+                                            ? "bg-primary/10 border border-primary/20"
+                                            : "hover:bg-background-light dark:hover:bg-background-dark"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={cn(
+                                            "h-2.5 w-2.5 rounded-full",
+                                            inst.status === "Running" ? "bg-success animate-pulse" :
+                                                !inst.is_active ? "bg-danger" : "bg-slate-300"
+                                        )}></div>
+                                        <span className="text-sm font-medium text-text-main dark:text-white">{inst.name}</span>
+                                    </div>
+                                    <span className="text-xs text-text-secondary">
+                                        {inst.status}
+                                    </span>
+                                </button>
+                                {/* Expanded Details Popover */}
+                                {selectedInstrument === inst.id && (
+                                    <div className="ml-5 mt-2 rounded-lg border border-border-light bg-background-light p-3 dark:border-border-dark dark:bg-background-dark">
+                                        {inst.status === "Running" ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-text-secondary">Current Test:</span>
+                                                    <span className="text-xs font-medium text-text-main dark:text-white">{inst.taskName}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-text-secondary">Sample:</span>
+                                                    <span className="text-xs font-medium text-text-main dark:text-white">{inst.sampleName || "N/A"}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-text-secondary">Est. Time:</span>
+                                                    <span className="text-xs font-medium text-success">{inst.timeLeft}</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-text-secondary">
+                                                {inst.is_active ? "Instrument ready for assignment" : "Instrument offline or under maintenance"}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
                 </div>
 
-                {/* Quick Actions Grid (Preserved) */}
+                {/* Quick Actions Grid */}
                 <div className="rounded-xl bg-gradient-to-br from-primary to-primary-hover p-6 text-white shadow-lg">
                     <h3 className="mb-1 text-lg font-bold">Quick Actions</h3>
                     <p className="mb-6 text-sm text-primary-light">Common administrative tasks</p>
@@ -287,7 +477,7 @@ export default function DashboardPage() {
                                 <span className="text-sm font-medium">Create Quote</span>
                             </button>
                         </Link>
-                        <Link href="/worklist">
+                        <Link href="/scheduling">
                             <button className="w-full rounded-lg border border-white/10 bg-white/10 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/20">
                                 <span className="material-symbols-outlined mb-2 block">assignment_ind</span>
                                 <span className="text-sm font-medium">Assign Tasks</span>
