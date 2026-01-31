@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Receipt - {{workOrderNumber}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 11pt;
+            color: #333;
+            line-height: 1.4;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #28a745;
+        }
+        .logo {
+            font-size: 24pt;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .logo-subtitle {
+            font-size: 10pt;
+            color: #666;
+        }
+        .document-title {
+            text-align: right;
+        }
+        .document-title h1 {
+            font-size: 20pt;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .document-number {
+            font-size: 12pt;
+            color: #666;
+        }
+        .info-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .info-box {
+            flex: 1;
+        }
+        .info-box h3 {
+            font-size: 10pt;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+        .info-box p {
+            font-size: 11pt;
+            margin-bottom: 3px;
+        }
+        .info-box .name {
+            font-weight: bold;
+            font-size: 12pt;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        .detail-item {
+            display: flex;
+            gap: 10px;
+        }
+        .detail-label {
+            font-weight: 500;
+            color: #666;
+            min-width: 120px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+        }
+        th {
+            background: #28a745;
+            color: white;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 10pt;
+        }
+        th:first-child {
+            width: 40px;
+            text-align: center;
+        }
+        td {
+            padding: 12px 8px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+        }
+        td:first-child {
+            text-align: center;
+            color: #666;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .sample-id {
+            font-family: monospace;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .condition-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 9pt;
+            font-weight: 500;
+        }
+        .condition-good {
+            background: #d4edda;
+            color: #155724;
+        }
+        .condition-damaged {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .summary {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .summary-count {
+            font-size: 24pt;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .summary-label {
+            font-size: 10pt;
+            color: #666;
+        }
+        .notes {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 25px;
+            border-left: 4px solid #ffc107;
+        }
+        .notes h3 {
+            font-size: 10pt;
+            color: #856404;
+            margin-bottom: 8px;
+        }
+        .notes p {
+            font-size: 10pt;
+            color: #856404;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        .signature-section {
+            display: flex;
+            justify-content: space-between;
+        }
+        .signature-box {
+            text-align: center;
+            width: 200px;
+        }
+        .signature-box .label {
+            font-size: 9pt;
+            color: #666;
+            margin-bottom: 50px;
+        }
+        .signature-box .line {
+            border-top: 1px solid #333;
+            padding-top: 5px;
+            font-weight: 500;
+        }
+        .timestamp {
+            text-align: center;
+            color: #666;
+            font-size: 10pt;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <div class="logo">LabFlow</div>
+            <div class="logo-subtitle">Laboratory Information Management System</div>
+        </div>
+        <div class="document-title">
+            <h1>SAMPLE RECEIPT</h1>
+            <div class="document-number">{{workOrderNumber}}</div>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <div class="info-box">
+            <h3>Customer Information</h3>
+            <p class="name">{{customer.name}}</p>
+            {{#if customer.address}}<p>{{customer.address}}</p>{{/if}}
+        </div>
+        <div class="info-box" style="text-align: right;">
+            <h3>Receipt Details</h3>
+            <p><strong>Received:</strong> {{formatDate receivedDate}}</p>
+            <p><strong>Work Order:</strong> {{workOrderNumber}}</p>
+        </div>
+    </div>
+
+    <div class="summary">
+        <div class="summary-count">{{samples.length}}</div>
+        <div class="summary-label">SAMPLES RECEIVED</div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>No</th>
+                <th>Sample Lab ID</th>
+                <th>Sample Name</th>
+                <th>Quantity</th>
+                <th>Condition</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each samples}}
+            <tr>
+                <td>{{no}}</td>
+                <td><span class="sample-id">{{sampleLabId}}</span></td>
+                <td>{{sampleName}}</td>
+                <td>{{quantity}}</td>
+                <td>
+                    {{#if condition}}
+                    <span class="condition-badge {{#if (eq condition 'Good')}}condition-good{{else}}condition-damaged{{/if}}">
+                        {{condition}}
+                    </span>
+                    {{/if}}
+                </td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+
+    {{#if notes}}
+    <div class="notes">
+        <h3>Receiving Notes</h3>
+        <p>{{notes}}</p>
+    </div>
+    {{/if}}
+
+    <div class="footer">
+        <div class="signature-section">
+            <div class="signature-box">
+                <div class="label">Received By (Lab)</div>
+                <div class="line">{{receivedBy}}</div>
+            </div>
+            <div class="signature-box">
+                <div class="label">Delivered By (Customer)</div>
+                <div class="line">____________________</div>
+            </div>
+        </div>
+        <div class="timestamp">
+            Document generated on {{formatDate receivedDate}}
+        </div>
+    </div>
+</body>
+</html>
