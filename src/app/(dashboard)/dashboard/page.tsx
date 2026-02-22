@@ -2,8 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { MOCK_TASKS, MOCK_USERS, MOCK_INSTRUMENTS, MOCK_SUBMISSIONS, MOCK_CUSTOMERS } from "@/data/mock-db";
+import { useTestTasks, useUsers, useInstruments, useCustomers, useReports, useSamples, useParameters } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/AuthProvider";
 import { useMemo, useState, useRef, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { useQuery } from "@tanstack/react-query";
 
 type SearchResult = {
     type: "task" | "customer" | "sample";
@@ -14,6 +17,48 @@ type SearchResult = {
 };
 
 export default function DashboardPage() {
+    const { data: tasks, isLoading: tasksLoading } = useTestTasks();
+    const { data: users } = useUsers();
+    const { data: instruments } = useInstruments();
+    const { data: customers } = useCustomers();
+    const { data: reports } = useReports();
+    const { data: samples } = useSamples();
+    const { data: parameters } = useParameters();
+    const { user } = useAuth();
+
+    // Fetch analysts to map analyst ID → user ID
+    const { data: analysts = [] } = useQuery<{ id: string; user_id: string }[]>({
+        queryKey: ["analysts", "all"],
+        queryFn: async () => {
+            const { data, error } = await supabase.from("analysts").select("id, user_id");
+            if (error) throw error;
+            return (data || []) as { id: string; user_id: string }[];
+        },
+    });
+
+    // Analyst lookup: assigned_to_id (analyst.id) → analyst.user_id → user.full_name
+    const getAnalystName = (analystId: string | null) => {
+        if (!analystId) return null;
+        const analyst = analysts.find(a => a.id === analystId);
+        if (!analyst) return null;
+        const u = users?.find(usr => usr.id === analyst.user_id);
+        return u?.full_name || null;
+    };
+
+    // Sample lookup helper
+    const getSampleDisplay = (sampleId: string | null) => {
+        if (!sampleId) return { id: "N/A", name: "Unknown" };
+        const s = samples?.find(sm => sm.id === sampleId);
+        return { id: s?.sample_lab_id || sampleId.slice(0, 8), name: s?.sample_name || "" };
+    };
+
+    // Parameter lookup helper
+    const getParameterName = (parameterId: string | null) => {
+        if (!parameterId) return "Unknown";
+        return parameters?.find(p => p.id === parameterId)?.name || parameterId.slice(0, 8);
+    };
+    const isManager = user?.role === "manager";
+
     const [searchQuery, setSearchQuery] = useState("");
     const [showSearchResults, setShowSearchResults] = useState(false);
     const [selectedInstrument, setSelectedInstrument] = useState<string | null>(null);
@@ -32,12 +77,21 @@ export default function DashboardPage() {
 
     // 1. CALCULATE DYNAMIC METRICS
     const metrics = useMemo(() => {
-        const activeTasks = MOCK_TASKS.filter(t => t.status !== "COMPLETED" && t.status !== "CANCELLED");
+        if (!tasks) return {
+            totalPending: 0,
+            urgentCount: 0,
+            revenue: 0,
+            criticalTAT: 0,
+            pendingReviews: 0,
+            overdueTasks: []
+        };
+
+        const activeTasks = tasks.filter(t => t.status !== "COMPLETED" && t.status !== "CANCELLED");
         const urgentTasks = activeTasks.filter(t => t.priority === "URGENT" || t.priority === "HIGH");
-        const pendingReviews = MOCK_SUBMISSIONS.filter(s => s.status === "SUBMITTED").length;
+        const pendingReviews = reports?.filter(r => r.status === "SUBMITTED").length || 0;
         const mockRevenue = 428000 + (activeTasks.length * 75000);
         const now = new Date();
-        const overdueTasks = activeTasks.filter(t => new Date(t.due_date) < now);
+        const overdueTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) < now);
         const criticalTAT = overdueTasks.length;
 
         return {
@@ -48,7 +102,7 @@ export default function DashboardPage() {
             pendingReviews,
             overdueTasks
         };
-    }, []);
+    }, [tasks, reports]);
 
     // 2. SEARCH RESULTS
     const searchResults = useMemo<SearchResult[]>(() => {
@@ -57,22 +111,20 @@ export default function DashboardPage() {
         const results: SearchResult[] = [];
 
         // Search tasks
-        MOCK_TASKS.forEach(task => {
-            if (task.parameter_name_snapshot.toLowerCase().includes(q) ||
-                task.sample_name_snapshot.toLowerCase().includes(q) ||
-                task.id.toLowerCase().includes(q)) {
+        tasks?.forEach(task => {
+            if (task.id.toLowerCase().includes(q)) {
                 results.push({
                     type: "task",
                     id: task.id,
-                    title: task.parameter_name_snapshot,
-                    subtitle: `${task.sample_name_snapshot} • ${task.status.replace("_", " ")}`,
+                    title: `Task ${task.task_number}`,
+                    subtitle: `${task.status.replace("_", " ")}`,
                     href: `/testing/${task.id}`
                 });
             }
         });
 
         // Search customers
-        MOCK_CUSTOMERS.forEach(cust => {
+        customers?.forEach(cust => {
             if (cust.name.toLowerCase().includes(q)) {
                 results.push({
                     type: "customer",
@@ -85,26 +137,35 @@ export default function DashboardPage() {
         });
 
         return results.slice(0, 8);
-    }, [searchQuery]);
+    }, [searchQuery, tasks, customers]);
 
-    // 3. PREPARE TABLE DATA (Top 5 Urgent/Recent)
-    const recentTasks = [...MOCK_TASKS]
-        .sort((a, b) => (b.priority === "HIGH" || b.priority === "URGENT") ? -1 : 1)
-        .slice(0, 5);
+    // 3. PREPARE TABLE DATA (Top 5 Urgent/Recent) — exclude cancelled/completed
+    const recentTasks = useMemo(() => {
+        if (!tasks) return [];
+        return [...tasks]
+            .filter(t => t.status !== "CANCELLED" && t.status !== "COMPLETED")
+            .sort((a, b) => {
+                const pOrder: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
+                return (pOrder[a.priority] ?? 2) - (pOrder[b.priority] ?? 2);
+            })
+            .slice(0, 5);
+    }, [tasks]);
 
     // 4. INSTRUMENT STATUS LOGIC
-    const instrumentStatus = MOCK_INSTRUMENTS.map(inst => {
-        const activeTask = MOCK_TASKS.find(t =>
-            t.instrument_id_snapshot === inst.id && t.status === "IN_PROGRESS"
-        );
-        return {
-            ...inst,
-            status: activeTask ? "Running" : "Idle",
-            taskName: activeTask?.parameter_name_snapshot,
-            sampleName: activeTask?.sample_name_snapshot,
-            timeLeft: activeTask ? "~12m remaining" : "(Ready)"
-        };
-    });
+    const instrumentStatus = useMemo(() => {
+        if (!instruments || !tasks) return [];
+        return instruments.map(inst => {
+            const activeTask = tasks.find(t =>
+                t.status === "IN_PROGRESS"
+            );
+            return {
+                ...inst,
+                statusText: activeTask ? "Running" : "Idle",
+                taskName: activeTask ? `Task ${activeTask.task_number}` : undefined,
+                timeLeft: activeTask ? "~12m remaining" : "(Ready)"
+            };
+        });
+    }, [instruments, tasks]);
 
     return (
         <>
@@ -169,12 +230,14 @@ export default function DashboardPage() {
                         <span className="material-symbols-outlined text-[18px]">download</span>
                         Export Report
                     </button>
-                    <Link href="/quotations/create">
-                        <button className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm shadow-primary/30 transition-colors hover:bg-primary-hover">
-                            <span className="material-symbols-outlined text-[18px]">add</span>
-                            New Order
-                        </button>
-                    </Link>
+                    {!isManager && (
+                        <Link href="/quotations/create">
+                            <button className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm shadow-primary/30 transition-colors hover:bg-primary-hover">
+                                <span className="material-symbols-outlined text-[18px]">add</span>
+                                New Order
+                            </button>
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -300,7 +363,7 @@ export default function DashboardPage() {
                         <div className="flex-1">
                             <h4 className="font-semibold text-danger">Critical: {metrics.overdueTasks.length} Overdue Task(s)</h4>
                             <p className="text-sm text-text-secondary">
-                                {metrics.overdueTasks.map(t => t.parameter_name_snapshot).join(", ")}
+                                {metrics.overdueTasks.map(t => t.task_number).join(", ")}
                             </p>
                         </div>
                         <Link href="/worklist?filter=overdue">
@@ -325,73 +388,67 @@ export default function DashboardPage() {
                         <table className="w-full border-collapse text-left text-sm">
                             <thead className="bg-background-light font-medium text-text-secondary dark:bg-black/20">
                                 <tr>
-                                    <th className="w-[140px] border-b border-border-light px-6 py-3 dark:border-border-dark">Task ID</th>
-                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Test Name</th>
-                                    <th className="w-[120px] border-b border-border-light px-6 py-3 dark:border-border-dark">Priority</th>
-                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Assigned Tech</th>
-                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Due Date</th>
-                                    <th className="w-[160px] border-b border-border-light px-6 py-3 dark:border-border-dark">Status</th>
-                                    <th className="border-b border-border-light px-6 py-3 text-right dark:border-border-dark">Action</th>
+                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Sample</th>
+                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Parameter</th>
+                                    <th className="w-[100px] border-b border-border-light px-6 py-3 text-center dark:border-border-dark">Priority</th>
+                                    <th className="border-b border-border-light px-6 py-3 text-center dark:border-border-dark">Due Date</th>
+                                    <th className="border-b border-border-light px-6 py-3 dark:border-border-dark">Analyst</th>
+                                    <th className="w-[120px] border-b border-border-light px-6 py-3 text-center dark:border-border-dark">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-light bg-surface-light dark:divide-border-dark dark:bg-surface-dark">
                                 {recentTasks.map((task) => {
-                                    const assignedUser = MOCK_USERS.find(u => u.id === task.assigned_to_user_id);
-                                    const isOverdue = new Date(task.due_date) < new Date();
+                                    const analystName = getAnalystName(task.assigned_to_id);
+                                    const sampleInfo = getSampleDisplay(task.sample_id);
+                                    const isOverdue = task.due_date && new Date(task.due_date) < new Date();
 
                                     return (
                                         <tr key={task.id} className={cn(
                                             "group transition-colors hover:bg-primary/5 dark:hover:bg-primary/5",
                                             isOverdue && "bg-danger/5"
                                         )}>
-                                            <td className="px-6 py-3 font-medium tabular-nums text-text-main dark:text-white">{task.id}</td>
-                                            <td className="px-6 py-3 text-text-main dark:text-white">
-                                                <div className="flex flex-col">
-                                                    <span className="font-medium">{task.parameter_name_snapshot}</span>
-                                                    <span className="text-xs text-text-secondary">{task.matrix_name_snapshot}</span>
-                                                </div>
+                                            <td className="px-6 py-3">
+                                                <span className="font-medium text-text-main dark:text-white">{sampleInfo.id}</span>
+                                                <span className="block text-xs text-text-secondary">{sampleInfo.name}</span>
                                             </td>
                                             <td className="px-6 py-3">
+                                                <span className="font-semibold text-text-main dark:text-white">{getParameterName(task.parameter_id)}</span>
+                                            </td>
+                                            <td className="px-6 py-3 text-center">
                                                 <span className={cn(
-                                                    "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                    task.priority === "HIGH" || task.priority === "URGENT" ? "bg-danger/10 text-danger ring-danger/20" :
-                                                        task.priority === "NORMAL" ? "bg-primary/10 text-primary ring-primary/20" :
-                                                            "bg-slate-100 text-slate-600 ring-slate-200"
+                                                    "text-xs rounded-full px-2.5 py-1 font-bold",
+                                                    task.priority === "HIGH" || task.priority === "URGENT" ? "bg-danger/10 text-danger" :
+                                                        task.priority === "NORMAL" ? "bg-primary/10 text-primary" :
+                                                            "bg-slate-100 text-slate-600"
                                                 )}>
                                                     {task.priority}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
-                                                        {assignedUser ? assignedUser.full_name.substring(0, 2).toUpperCase() : "?"}
-                                                    </div>
-                                                    <span className="text-text-secondary">{assignedUser?.full_name || "Unassigned"}</span>
-                                                </div>
-                                            </td>
                                             <td className={cn(
-                                                "tabular-nums px-6 py-3",
+                                                "tabular-nums px-6 py-3 text-center",
                                                 isOverdue ? "font-medium text-danger" : "text-text-secondary"
                                             )}>
                                                 {isOverdue && <span className="material-symbols-outlined mr-1 text-[14px] align-middle">schedule</span>}
-                                                {new Date(task.due_date).toLocaleDateString()}
+                                                {task.due_date ? new Date(task.due_date).toLocaleDateString() : "N/A"}
                                             </td>
                                             <td className="px-6 py-3">
-                                                <div className="flex items-center gap-2 text-xs font-semibold text-primary">
-                                                    <span className={cn(
-                                                        "h-2 w-2 rounded-full",
-                                                        task.status === "IN_PROGRESS" ? "bg-primary animate-pulse" :
-                                                            task.status === "ASSIGNED" ? "bg-blue-400" : "bg-slate-300"
-                                                    )}></span>
-                                                    {task.status.replace("_", " ")}
-                                                </div>
+                                                {task.assigned_to_id ? (
+                                                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-md">
+                                                        {analystName || "Analyst"}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-text-secondary italic">Unassigned</span>
+                                                )}
                                             </td>
-                                            <td className="px-6 py-3 text-right">
-                                                <Link href={`/testing/${task.id}`}>
-                                                    <button className="text-sm font-medium text-primary hover:text-primary-hover">
-                                                        {task.status === "COMPLETED" ? "Review" : "Open"}
-                                                    </button>
-                                                </Link>
+                                            <td className="px-6 py-3 text-center">
+                                                <span className={cn(
+                                                    "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full",
+                                                    task.status === "ASSIGNED" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
+                                                        task.status === "IN_PROGRESS" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :
+                                                            "bg-slate-100 text-slate-500"
+                                                )}>
+                                                    {task.status.replace(/_/g, " ")}
+                                                </span>
                                             </td>
                                         </tr>
                                     );
@@ -427,27 +484,23 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-3">
                                         <div className={cn(
                                             "h-2.5 w-2.5 rounded-full",
-                                            inst.status === "Running" ? "bg-success animate-pulse" :
+                                            inst.statusText === "Running" ? "bg-success animate-pulse" :
                                                 !inst.is_active ? "bg-danger" : "bg-slate-300"
                                         )}></div>
                                         <span className="text-sm font-medium text-text-main dark:text-white">{inst.name}</span>
                                     </div>
                                     <span className="text-xs text-text-secondary">
-                                        {inst.status}
+                                        {inst.statusText}
                                     </span>
                                 </button>
                                 {/* Expanded Details Popover */}
                                 {selectedInstrument === inst.id && (
                                     <div className="ml-5 mt-2 rounded-lg border border-border-light bg-background-light p-3 dark:border-border-dark dark:bg-background-dark">
-                                        {inst.status === "Running" ? (
+                                        {inst.statusText === "Running" ? (
                                             <div className="space-y-2">
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-xs text-text-secondary">Current Test:</span>
                                                     <span className="text-xs font-medium text-text-main dark:text-white">{inst.taskName}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-xs text-text-secondary">Sample:</span>
-                                                    <span className="text-xs font-medium text-text-main dark:text-white">{inst.sampleName || "N/A"}</span>
                                                 </div>
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-xs text-text-secondary">Est. Time:</span>
@@ -471,12 +524,22 @@ export default function DashboardPage() {
                     <h3 className="mb-1 text-lg font-bold">Quick Actions</h3>
                     <p className="mb-6 text-sm text-primary-light">Common administrative tasks</p>
                     <div className="grid grid-cols-2 gap-3">
-                        <Link href="/quotations/create">
-                            <button className="w-full rounded-lg border border-white/10 bg-white/10 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/20">
-                                <span className="material-symbols-outlined mb-2 block">add_box</span>
-                                <span className="text-sm font-medium">Create Quote</span>
-                            </button>
-                        </Link>
+                        {!isManager && (
+                            <Link href="/quotations/create">
+                                <button className="w-full rounded-lg border border-white/10 bg-white/10 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/20">
+                                    <span className="material-symbols-outlined mb-2 block">add_box</span>
+                                    <span className="text-sm font-medium">Create Quote</span>
+                                </button>
+                            </Link>
+                        )}
+                        {isManager && (
+                            <Link href="/quotations?tab=review">
+                                <button className="w-full rounded-lg border border-white/10 bg-white/10 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/20">
+                                    <span className="material-symbols-outlined mb-2 block">rate_review</span>
+                                    <span className="text-sm font-medium">Review Quotes</span>
+                                </button>
+                            </Link>
+                        )}
                         <Link href="/scheduling">
                             <button className="w-full rounded-lg border border-white/10 bg-white/10 p-3 text-left backdrop-blur-sm transition-all hover:bg-white/20">
                                 <span className="material-symbols-outlined mb-2 block">assignment_ind</span>

@@ -4,16 +4,35 @@ import { useState, useMemo } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { Label } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
-import { MOCK_MATRICES, MOCK_UNITS } from "@/data/mock-db";
+import { useSampleMatrices, useUnits } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
+
+export interface SampleAccessioningData {
+    sample_name: string;
+    customer_sample_id: string;
+    matrix_id: string;
+    quantity: number;
+    unit_id: string;
+    packaging_type: string;
+    seal_intact: boolean;
+    condition: string;
+    condition_notes: string;
+    storage_type: string;
+    storage_location: string;
+    storage_temperature: number | null;
+    volume: number | null;
+    volume_unit: string;
+    due_date: string;
+    acceptance_decision: "ACCEPT" | "REJECT";
+    rejection_reason: string;
+}
 
 interface SampleAccessioningProps {
     defaultMatrixId?: string;
-    onNext: () => void;
+    onNext: (data: SampleAccessioningData) => void;
     onBack: () => void;
 }
 
-// Mock storage locations
 const STORAGE_LOCATIONS = [
     { id: "CHILLER_A1", name: "Chiller A - Shelf 1", type: "CHILLER" },
     { id: "CHILLER_A2", name: "Chiller A - Shelf 2", type: "CHILLER" },
@@ -23,51 +42,65 @@ const STORAGE_LOCATIONS = [
 ];
 
 export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAccessioningProps) {
-    // Auto-generated Sample ID
-    const autoSampleId = useMemo(() => {
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: units = [] } = useUnits();
+
+    // Sample ID preview (actual generated at registration by service)
+    const sampleIdPreview = useMemo(() => {
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        return `S-${year}${month}${day}-${random}`;
+        return `S-${year}${month}XXXX`;
     }, []);
 
     // FORM STATE
-    const [sampleId, setSampleId] = useState(autoSampleId);
     const [sampleName, setSampleName] = useState("");
+    const [customerSampleId, setCustomerSampleId] = useState("");
     const [matrixId, setMatrixId] = useState(defaultMatrixId || "");
     const [quantity, setQuantity] = useState("1");
     const [unitId, setUnitId] = useState("");
     const [packagingType, setPackagingType] = useState("BOTTLE");
     const [sealIntact, setSealIntact] = useState(true);
     const [condition, setCondition] = useState("INTACT");
+    const [conditionNotes, setConditionNotes] = useState("");
     const [storageType, setStorageType] = useState("CHILLER");
     const [storageLocation, setStorageLocation] = useState("");
     const [temp, setTemp] = useState("");
     const [dueDate, setDueDate] = useState("");
-    const [printBarcode, setPrintBarcode] = useState(true);
-    const [acceptanceDecision, setAcceptanceDecision] = useState<"ACCEPT" | "CONDITIONAL" | "REJECT">("ACCEPT");
+    const [acceptanceDecision, setAcceptanceDecision] = useState<"ACCEPT" | "REJECT">("ACCEPT");
+    const [rejectionReason, setRejectionReason] = useState("");
 
-    // Filter storage locations by type
     const filteredLocations = useMemo(() =>
         STORAGE_LOCATIONS.filter(loc => loc.type === storageType),
         [storageType]
     );
 
-    const handleRegenerateId = () => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        setSampleId(`S-${year}${month}${day}-${random}`);
+    const handleSubmit = () => {
+        const data: SampleAccessioningData = {
+            sample_name: sampleName,
+            customer_sample_id: customerSampleId,
+            matrix_id: matrixId,
+            quantity: parseInt(quantity) || 1,
+            unit_id: unitId,
+            packaging_type: packagingType,
+            seal_intact: sealIntact,
+            condition,
+            condition_notes: conditionNotes,
+            storage_type: storageType,
+            storage_location: storageLocation,
+            storage_temperature: temp ? parseFloat(temp) : null,
+            volume: quantity ? parseFloat(quantity) : null,
+            volume_unit: unitId,
+            due_date: dueDate,
+            acceptance_decision: acceptanceDecision,
+            rejection_reason: rejectionReason,
+        };
+        onNext(data);
     };
 
-    const handlePrintBarcode = () => {
-        alert(`Printing barcode for Sample ID: ${sampleId}`);
-        // In real app, this would trigger barcode printer
-    };
+    const canSubmit = acceptanceDecision === "ACCEPT"
+        ? !!(sampleName && matrixId)
+        : !!(rejectionReason.trim());
 
     return (
         <PremiumCard title="Step 4: Sample Accessioning" subtitle="Register physical sample condition & storage">
@@ -77,45 +110,28 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                 <div className="space-y-4">
                     <h4 className="font-semibold text-sm text-primary border-b border-border-light pb-2">Sample Identification</h4>
 
-                    {/* Auto-generated Sample ID */}
+                    {/* Sample ID Preview */}
                     <div className="space-y-2">
-                        <Label>Sample ID (Auto-generated)</Label>
-                        <div className="flex gap-2">
-                            <Input
-                                value={sampleId}
-                                onChange={(e) => setSampleId(e.target.value)}
-                                className="font-mono flex-1"
-                            />
-                            <button
-                                type="button"
-                                onClick={handleRegenerateId}
-                                className="rounded-lg border border-border-light bg-white px-3 py-2 text-text-secondary hover:bg-background-light dark:border-border-dark dark:bg-surface-dark"
-                                title="Regenerate ID"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">refresh</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handlePrintBarcode}
-                                className="rounded-lg bg-primary px-3 py-2 text-white hover:bg-primary-hover"
-                                title="Print Barcode"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
-                            </button>
+                        <Label>Sample ID (Auto-generated at registration)</Label>
+                        <div className="flex gap-2 items-center">
+                            <div className="flex-1 font-mono text-sm px-3 py-2 rounded-md bg-slate-100 dark:bg-white/5 border border-border-light text-text-secondary">
+                                {sampleIdPreview}
+                            </div>
+                            <span className="text-xs text-text-secondary italic">Will be assigned</span>
                         </div>
-                        <label className="flex items-center gap-2 text-xs text-text-secondary">
-                            <input
-                                type="checkbox"
-                                checked={printBarcode}
-                                onChange={(e) => setPrintBarcode(e.target.checked)}
-                                className="rounded border-border-light"
-                            />
-                            Print barcode label after registration
-                        </label>
                     </div>
 
                     <div className="space-y-2">
-                        <Label>Sample Name / Label</Label>
+                        <Label>Customer Sample ID (optional)</Label>
+                        <Input
+                            placeholder="e.g. Sample label dari customer"
+                            value={customerSampleId}
+                            onChange={(e) => setCustomerSampleId(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Sample Name / Label *</Label>
                         <Input
                             placeholder="e.g. Outlet IPAL - Timur"
                             value={sampleName}
@@ -124,14 +140,14 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                     </div>
 
                     <div className="space-y-2">
-                        <Label>Matrix Type</Label>
+                        <Label>Matrix Type *</Label>
                         <select
                             className="w-full text-sm rounded-md border border-border-light p-2 bg-white dark:bg-white/5 dark:border-white/10"
                             value={matrixId}
                             onChange={(e) => setMatrixId(e.target.value)}
                         >
                             <option value="">Select Matrix...</option>
-                            {MOCK_MATRICES.map(m => (
+                            {(matrices || []).map(m => (
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
@@ -157,7 +173,7 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                                 onChange={(e) => setUnitId(e.target.value)}
                             >
                                 <option value="">Select Unit...</option>
-                                {MOCK_UNITS.map(u => (
+                                {(units || []).map(u => (
                                     <option key={u.id} value={u.id}>{u.symbol} ({u.name})</option>
                                 ))}
                             </select>
@@ -241,6 +257,19 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                         </div>
                     </div>
 
+                    {condition !== "INTACT" && (
+                        <div className="space-y-2">
+                            <Label>Condition Notes</Label>
+                            <textarea
+                                className="w-full text-sm rounded-md border border-border-light p-2 bg-white dark:bg-white/5 dark:border-white/10"
+                                rows={2}
+                                placeholder="Describe damage, leak, or other condition..."
+                                value={conditionNotes}
+                                onChange={(e) => setConditionNotes(e.target.value)}
+                            />
+                        </div>
+                    )}
+
                     <div className="space-y-2">
                         <Label>Storage Type</Label>
                         <div className="grid grid-cols-3 gap-2">
@@ -291,56 +320,76 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                         </div>
                     </div>
 
-                    {/* Acceptance Decision */}
+                    {/* Acceptance Decision — 2 options only */}
                     <div className="space-y-2">
-                        <Label>Acceptance Decision</Label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {(['ACCEPT', 'CONDITIONAL', 'REJECT'] as const).map(decision => (
+                        <Label>Acceptance Decision *</Label>
+                        <div className="grid grid-cols-2 gap-3">
+                            {(['ACCEPT', 'REJECT'] as const).map(decision => (
                                 <button
                                     key={decision}
                                     type="button"
                                     onClick={() => setAcceptanceDecision(decision)}
                                     className={cn(
-                                        "text-xs py-2 px-1 rounded border transition-all font-medium",
+                                        "text-sm py-3 px-4 rounded-lg border-2 transition-all font-semibold flex items-center justify-center gap-2",
                                         acceptanceDecision === decision
-                                            ? (decision === "ACCEPT" ? "bg-success text-white border-success" :
-                                                decision === "CONDITIONAL" ? "bg-warning text-white border-warning" :
-                                                    "bg-danger text-white border-danger")
-                                            : "bg-surface-light border-border-light hover:bg-slate-100 dark:bg-surface-dark dark:border-white/10"
+                                            ? (decision === "ACCEPT"
+                                                ? "bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20"
+                                                : "bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/20")
+                                            : "bg-surface-light border-border-light hover:bg-slate-100 dark:bg-surface-dark dark:border-white/10 text-text-secondary"
                                     )}
                                 >
-                                    {decision === "ACCEPT" && "✓ "}
-                                    {decision === "CONDITIONAL" && "⚠ "}
-                                    {decision === "REJECT" && "✕ "}
-                                    {decision}
+                                    <span className="material-symbols-outlined text-[18px]">
+                                        {decision === "ACCEPT" ? "check_circle" : "cancel"}
+                                    </span>
+                                    {decision === "ACCEPT" ? "Accept" : "Reject"}
                                 </button>
                             ))}
                         </div>
-                        {acceptanceDecision === "CONDITIONAL" && (
-                            <p className="text-xs text-warning mt-1">⚠ Proceed with documented exceptions</p>
+                        {acceptanceDecision === "ACCEPT" && (
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">info</span>
+                                Sample will be registered in the system with a new Sample ID & Work Order
+                            </p>
                         )}
                         {acceptanceDecision === "REJECT" && (
-                            <p className="text-xs text-danger mt-1">✕ Sample does not meet acceptance criteria</p>
+                            <div className="mt-2 space-y-2">
+                                <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                                    Sample will NOT be registered. Only a rejection log will be created.
+                                </p>
+                                <textarea
+                                    className="w-full text-sm rounded-md border border-red-300 dark:border-red-700 p-2 bg-red-50 dark:bg-red-900/10"
+                                    rows={3}
+                                    placeholder="Alasan penolakan (wajib diisi)..."
+                                    value={rejectionReason}
+                                    onChange={(e) => setRejectionReason(e.target.value)}
+                                />
+                            </div>
                         )}
                     </div>
                 </div>
 
             </div>
 
-            {/* Sample ID Preview Card */}
+            {/* Summary Preview Card */}
             <div className="mt-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-xs text-text-secondary">Sample will be registered as:</p>
-                        <p className="font-mono text-lg font-bold text-primary">{sampleId}</p>
+                        <p className="text-xs text-text-secondary">
+                            {acceptanceDecision === "ACCEPT" ? "Sample will be registered as:" : "Sample will be REJECTED"}
+                        </p>
+                        {acceptanceDecision === "ACCEPT" ? (
+                            <p className="font-mono text-lg font-bold text-primary">{sampleIdPreview}</p>
+                        ) : (
+                            <p className="font-mono text-lg font-bold text-red-500">REJECTED — Log Only</p>
+                        )}
                     </div>
-                    <div className="text-right">
-                        <p className="text-xs text-text-secondary">Barcode</p>
-                        <div className="flex items-center gap-2 mt-1">
-                            <span className="font-mono text-xs text-text-main">{sampleId}</span>
-                            <span className="material-symbols-outlined text-[20px] text-primary">qr_code_2</span>
+                    {acceptanceDecision === "ACCEPT" && (
+                        <div className="text-right">
+                            <p className="text-xs text-text-secondary">Format</p>
+                            <p className="font-mono text-xs text-text-main">S-YYYYMMXXXX</p>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
@@ -349,11 +398,16 @@ export function SampleAccessioning({ defaultMatrixId, onNext, onBack }: SampleAc
                     ← Back to CoC
                 </button>
                 <button
-                    onClick={onNext}
-                    disabled={!sampleName || !matrixId}
-                    className="rounded-lg bg-primary px-6 py-2 text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleSubmit}
+                    disabled={!canSubmit}
+                    className={cn(
+                        "rounded-lg px-6 py-2 text-white disabled:opacity-50 disabled:cursor-not-allowed font-medium",
+                        acceptanceDecision === "ACCEPT"
+                            ? "bg-primary hover:bg-primary-hover"
+                            : "bg-red-500 hover:bg-red-600"
+                    )}
                 >
-                    Register Sample & Continue
+                    {acceptanceDecision === "ACCEPT" ? "Register Sample & Continue" : "Log Rejection & Continue"}
                 </button>
             </div>
         </PremiumCard>

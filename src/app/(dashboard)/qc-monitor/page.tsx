@@ -19,13 +19,7 @@ export default function QCMonitorPage() {
 
             <div className="mx-auto max-w-6xl grid grid-cols-1 gap-6">
                 <QCAlertTable />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <ControlChart />
-                    {/* Placeholder for another chart */}
-                    <div className="opacity-50 grayscale pointer-events-none">
-                        <ControlChart />
-                    </div>
-                </div>
+                <ControlChart />
             </div>
         </div>
     );

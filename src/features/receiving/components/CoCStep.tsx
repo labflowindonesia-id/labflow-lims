@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { DenseTable } from "@/components/ui/DenseTable";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { MOCK_USERS } from "@/data/mock-db";
+import { useUsers } from "@/hooks/use-supabase";
 
 interface CoCStepProps {
     onBack: () => void;
@@ -23,17 +23,18 @@ interface CustodyEntry {
 }
 
 export function CoCStep({ onBack, onNext }: CoCStepProps) {
+    const { data: users = [] } = useUsers();
     const [fileUploaded, setFileUploaded] = useState(false);
     const [fileName, setFileName] = useState("");
     const [containerCount, setContainerCount] = useState("1");
     const [preservation, setPreservation] = useState("COLD");
 
-    // Chain of Custody Log
+    // Chain of Custody Log - Initial entry with first user
     const [custodyLog, setCustodyLog] = useState<CustodyEntry[]>([
         {
             id: "coc-001",
             handedBy: "Customer Representative",
-            receivedBy: MOCK_USERS[2]?.full_name || "Sample Receiving Staff",
+            receivedBy: users[0]?.full_name || "Sample Receiving Staff",
             timestamp: new Date(),
             location: "Sample Reception Desk",
             notes: "Initial sample handover"
@@ -182,7 +183,7 @@ export function CoCStep({ onBack, onNext }: CoCStepProps) {
                                     onChange={(e) => setNewEntry({ ...newEntry, receivedBy: e.target.value })}
                                 >
                                     <option value="">Select Staff...</option>
-                                    {MOCK_USERS.map(u => (
+                                    {users.map(u => (
                                         <option key={u.id} value={u.full_name}>{u.full_name}</option>
                                     ))}
                                 </select>

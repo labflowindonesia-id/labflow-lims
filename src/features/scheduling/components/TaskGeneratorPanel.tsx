@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { Label } from "@/components/ui/Label";
-import { Input } from "@/components/ui/Input";
-import { MOCK_WORK_ORDERS, MOCK_PARAMETERS, MOCK_USERS, MOCK_RULES, MOCK_MATRICES, MOCK_METHODS, MOCK_INSTRUMENTS } from "@/data/mock-db";
+import { useParameters, useUsers, useMatrixParameterRules, useSampleMatrices, useMethods, useInstruments, useAnalystQualifications, useConfirmedSamples, queryKeys } from "@/hooks/use-supabase";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 interface RequestedTest {
@@ -14,78 +14,117 @@ interface RequestedTest {
     matrix_id: string;
     matrix_name: string;
     method: string;
+    method_id: string | null;
     instrument: string;
+    instrument_id: string | null;
     default_tat_days: number;
     due_date_override?: string;
     assigned_analyst_id?: string;
-    sample_count: number;
 }
 
 interface GeneratedTask {
     id: string;
-    sample_name: string;
+    sample_id_display: string;
     parameter_name: string;
     due_date: string;
     assigned_to?: string;
     qualification_warning: boolean;
 }
 
-// Mock analyst qualifications
-const ANALYST_QUALIFICATIONS: Record<string, string[]> = {
-    "usr-003": ["par-001", "par-002", "par-004"], // Analyst Kimia qualified for COD, pH, Cd
-};
-
 export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenerated?: (count: number) => void }) {
-    const [selectedWO, setSelectedWO] = useState<string>("");
+    const [selectedSampleUUID, setSelectedSampleUUID] = useState<string>("");
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [generatedTasks, setGeneratedTasks] = useState<GeneratedTask[]>([]);
     const [bulkAnalyst, setBulkAnalyst] = useState("");
     const [requestedTests, setRequestedTests] = useState<RequestedTest[]>([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const analysts = MOCK_USERS.filter(u => u.role === "ANALYST");
+    const queryClient = useQueryClient();
 
-    const pendingWorkOrders = MOCK_WORK_ORDERS.filter(wo =>
-        wo.status === "RECEIVED" || wo.status === "IN_PROGRESS"
-    );
+    // Supabase data
+    const { data: confirmedSamples = [] } = useConfirmedSamples();
+    const { data: parameters = [] } = useParameters();
+    const { data: users = [] } = useUsers();
+    const { data: rules = [] } = useMatrixParameterRules();
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: methods = [] } = useMethods();
+    const { data: instruments = [] } = useInstruments();
+    const { data: qualificationMap = {} } = useAnalystQualifications();
 
-    const selectedWorkOrder = pendingWorkOrders.find(wo => wo.id === selectedWO);
+    const analysts = (users || []).filter(u => u.role === "ANALYST");
 
-    // Load requested tests when WO changes
-    const loadRequestedTests = (woId: string) => {
-        const wo = MOCK_WORK_ORDERS.find(w => w.id === woId);
-        if (!wo) return;
+    const selectedSample = confirmedSamples.find(s => s.id === selectedSampleUUID);
 
-        // Generate mock requested tests based on rules
-        const tests: RequestedTest[] = MOCK_RULES.slice(0, 4).map((rule, idx) => {
-            const param = MOCK_PARAMETERS.find(p => p.id === rule.parameter_id);
-            const matrix = MOCK_MATRICES.find(m => m.id === rule.matrix_id);
-            const method = MOCK_METHODS.find(m => m.id === rule.default_method_id);
-            const instrument = MOCK_INSTRUMENTS.find(i => i.id === rule.default_instrument_id);
+    // Load requested tests based on sample's requested_tests in DB
+    const loadRequestedTests = async (sampleUUID: string) => {
+        const sample = confirmedSamples.find(s => s.id === sampleUUID);
+        if (!sample || !sample.matrix_id) {
+            setRequestedTests([]);
+            return;
+        }
 
-            const dueDate = new Date();
-            dueDate.setDate(dueDate.getDate() + rule.default_tat_days);
+        try {
+            // Get actual requested tests for this sample
+            const { data, error: reqError } = await supabase
+                .from("requested_tests" as any)
+                .select("*")
+                .eq("sample_id", sampleUUID);
+            const dbRequests = data as any[];
 
-            return {
-                id: `req-${idx}`,
-                parameter_id: rule.parameter_id,
-                parameter_name: param?.name || "Unknown",
-                matrix_id: rule.matrix_id,
-                matrix_name: matrix?.name || "Unknown",
-                method: method?.code || "N/A",
-                instrument: instrument?.name || "N/A",
-                default_tat_days: rule.default_tat_days,
-                due_date_override: dueDate.toISOString().split('T')[0],
-                sample_count: wo.sample_count || 1
-            };
-        });
+            if (reqError) throw reqError;
+            if (!dbRequests || dbRequests.length === 0) {
+                setRequestedTests([]);
+                return;
+            }
 
-        setRequestedTests(tests);
+            // Get existing active tasks to filter out already-generated ones
+            const { data: existingTasksData, error: taskError } = await (supabase as any)
+                .from("test_tasks")
+                .select("requested_test_id")
+                .eq("sample_id", sampleUUID)
+                .neq("status", "CANCELLED");
+
+            if (taskError) throw taskError;
+
+            const existingTasks = existingTasksData as any[];
+            const existingReqTestIds = new Set((existingTasks || []).map(t => t.requested_test_id));
+            const availableRequests = dbRequests.filter(req => !existingReqTestIds.has(req.id));
+
+            const tests: RequestedTest[] = availableRequests.map((req) => {
+                const param = (parameters || []).find(p => p.id === req.parameter_id);
+                const matrix = (matrices || []).find(m => m.id === sample.matrix_id);
+                const method = (methods || []).find(m => m.id === req.method_id);
+                const instrument = (instruments || []).find(i => i.id === req.instrument_id);
+
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + (req.tat_days || 5));
+
+                return {
+                    id: req.id, // Use actual requested_test.id
+                    parameter_id: req.parameter_id,
+                    parameter_name: param?.name || "Unknown",
+                    matrix_id: sample.matrix_id as string,
+                    matrix_name: matrix?.name || "Unknown",
+                    method: method?.code || "N/A",
+                    method_id: req.method_id || null,
+                    instrument: instrument?.name || "N/A",
+                    instrument_id: req.instrument_id || null,
+                    default_tat_days: req.tat_days || 5,
+                    due_date_override: req.due_date ? new Date(req.due_date).toISOString().split('T')[0] : dueDate.toISOString().split('T')[0],
+                };
+            });
+
+            setRequestedTests(tests);
+        } catch (err) {
+            console.error("Failed to load requested tests:", err);
+            setRequestedTests([]);
+        }
     };
 
-    const handleWOChange = (woId: string) => {
-        setSelectedWO(woId);
-        if (woId) {
-            loadRequestedTests(woId);
+    const handleSampleChange = (sampleUUID: string) => {
+        setSelectedSampleUUID(sampleUUID);
+        if (sampleUUID) {
+            loadRequestedTests(sampleUUID);
         } else {
             setRequestedTests([]);
         }
@@ -111,49 +150,116 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
     };
 
     const isAnalystQualified = (analystId: string, parameterId: string): boolean => {
-        const qualifications = ANALYST_QUALIFICATIONS[analystId];
-        if (!qualifications) return false;
-        return qualifications.includes(parameterId);
+        const qualifiedParams = qualificationMap[analystId];
+        if (!qualifiedParams || qualifiedParams.length === 0) return false;
+        return qualifiedParams.includes(parameterId);
     };
 
     const handleGenerateTasks = () => {
-        if (!selectedWorkOrder) return;
+        if (!selectedSample) return;
 
-        const newTasks: GeneratedTask[] = requestedTests.flatMap((test) => {
-            const tasks: GeneratedTask[] = [];
-            for (let i = 0; i < test.sample_count; i++) {
-                const qualificationWarning = test.assigned_analyst_id
-                    ? !isAnalystQualified(test.assigned_analyst_id, test.parameter_id)
-                    : false;
+        // 1 sample = 1 task per parameter (no more sample_count loop)
+        const newTasks: GeneratedTask[] = requestedTests.map((test) => {
+            const qualificationWarning = test.assigned_analyst_id
+                ? !isAnalystQualified(test.assigned_analyst_id, test.parameter_id)
+                : false;
 
-                tasks.push({
-                    id: `task-gen-${Date.now()}-${test.id}-${i}`,
-                    sample_name: `Sample-${selectedWorkOrder.work_order_no.split('-').pop()}-${i + 1}`,
-                    parameter_name: test.parameter_name,
-                    due_date: test.due_date_override || new Date().toISOString().split('T')[0],
-                    assigned_to: test.assigned_analyst_id,
-                    qualification_warning: qualificationWarning
-                });
-            }
-            return tasks;
+            return {
+                id: `task-gen-${Date.now()}-${test.id}`,
+                sample_id_display: selectedSample.sample_id,
+                parameter_name: test.parameter_name,
+                due_date: test.due_date_override || new Date().toISOString().split('T')[0],
+                assigned_to: test.assigned_analyst_id,
+                qualification_warning: qualificationWarning,
+            };
         });
 
         setGeneratedTasks(newTasks);
         setShowConfirmModal(true);
     };
 
-    const handleConfirmGeneration = () => {
-        console.log("GENERATING TASKS:", generatedTasks);
+    const handleConfirmGeneration = async () => {
+        if (isSubmitting || !selectedSample) return;
+        setIsSubmitting(true);
 
-        if (onTasksGenerated) {
-            onTasksGenerated(generatedTasks.length);
+        try {
+            const now = new Date().toISOString();
+            const sampleId = selectedSample.id; // UUID of the selected sample
+
+            // Step 1: Look up analyst IDs (test_tasks.assigned_to_id FK → analysts.id, not users.id)
+            const uniqueUserIds = [...new Set(requestedTests.map(t => t.assigned_analyst_id).filter(Boolean))] as string[];
+            const analystIdMap: Record<string, string> = {};
+
+            if (uniqueUserIds.length > 0) {
+                const { data: analystRows } = await (supabase
+                    .from("analysts" as any)
+                    .select("id, user_id")
+                    .in("user_id", uniqueUserIds) as any) as { data: { id: string; user_id: string }[] | null; error: any };
+
+                (analystRows || []).forEach((a: { id: string; user_id: string }) => {
+                    analystIdMap[a.user_id] = a.id;
+                });
+            }
+
+            // Step 2: Build test_tasks rows
+            const taskRows: any[] = [];
+
+            requestedTests.forEach((test, testIdx) => {
+                const requestedTestId = test.id; // Already the actual requested_test.id
+                const taskId = crypto.randomUUID();
+                const taskNumber = `TSK-${Date.now()}-${testIdx}`;
+                const analystId = test.assigned_analyst_id ? (analystIdMap[test.assigned_analyst_id] || null) : null;
+
+                // Child row: test_tasks (references requested_test_id)
+                taskRows.push({
+                    id: taskId,
+                    task_number: taskNumber,
+                    requested_test_id: requestedTestId,
+                    sample_id: sampleId,
+                    work_plan_id: null, // this gets filled by the database or left null
+                    parameter_id: test.parameter_id,
+                    method_id: test.method_id,
+                    instrument_id: test.instrument_id,
+                    assigned_to_id: analystId,
+                    status: analystId ? "ASSIGNED" : "PLANNED",
+                    priority: "NORMAL",
+                    due_date: test.due_date_override ? new Date(test.due_date_override).toISOString() : null,
+                    planned_date: now,
+                    is_overdue: false,
+                    is_urgent: false,
+                    assigned_at: analystId ? now : null,
+                });
+            });
+
+            // Step 3: Insert test_tasks (child FK)
+            const { error } = await supabase
+                .from("test_tasks")
+                .insert(taskRows as any);
+
+            if (error) {
+                console.error("Failed to insert tasks:", error);
+                alert(`Error creating tasks: ${error.message}`);
+                return;
+            }
+
+            // Invalidate cache so Pending Assignments refreshes
+            await queryClient.invalidateQueries({ queryKey: queryKeys.testTasks.all });
+
+            if (onTasksGenerated) {
+                onTasksGenerated(taskRows.length);
+            }
+
+            alert(`${taskRows.length} tasks created successfully for ${selectedSample.sample_id}!`);
+            setShowConfirmModal(false);
+            setSelectedSampleUUID("");
+            setRequestedTests([]);
+            setGeneratedTasks([]);
+        } catch (err) {
+            console.error("Task generation error:", err);
+            alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+        } finally {
+            setIsSubmitting(false);
         }
-
-        alert(`${generatedTasks.length} tasks created successfully!`);
-        setShowConfirmModal(false);
-        setSelectedWO("");
-        setRequestedTests([]);
-        setGeneratedTasks([]);
     };
 
     const qualificationWarningCount = useMemo(() => {
@@ -166,24 +272,24 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
         <>
             <PremiumCard
                 title="Task Generator"
-                subtitle="Create test tasks from confirmed work orders"
+                subtitle="Create test tasks from confirmed samples"
             >
                 <div className="space-y-4">
-                    {/* Work Order & Bulk Assign */}
+                    {/* Sample ID & Bulk Assign */}
                     <div className="grid gap-4 md:grid-cols-3">
                         <div>
                             <label className="text-xs font-medium text-text-secondary mb-1.5 block">
-                                Select Work Order
+                                Select Sample ID
                             </label>
                             <select
                                 className="w-full text-sm border border-border-light rounded-lg p-2.5 bg-white dark:bg-surface-dark dark:border-border-dark"
-                                value={selectedWO}
-                                onChange={(e) => handleWOChange(e.target.value)}
+                                value={selectedSampleUUID}
+                                onChange={(e) => handleSampleChange(e.target.value)}
                             >
-                                <option value="">Choose a work order...</option>
-                                {pendingWorkOrders.map(wo => (
-                                    <option key={wo.id} value={wo.id}>
-                                        {wo.work_order_no} - {wo.customer_name_snapshot}
+                                <option value="">Choose a sample...</option>
+                                {confirmedSamples.map(s => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.sample_id} — {s.sample_name || "Unnamed"} ({s.work_order_number})
                                     </option>
                                 ))}
                             </select>
@@ -225,8 +331,24 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                         </div>
                     </div>
 
+                    {/* Sample Info Card */}
+                    {selectedSample && (
+                        <div className="flex items-center gap-4 px-4 py-3 rounded-lg bg-primary/5 border border-primary/10">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary text-[20px]">science</span>
+                                <span className="text-sm font-bold text-primary">{selectedSample.sample_id}</span>
+                            </div>
+                            <div className="text-xs text-text-secondary">
+                                <span className="font-medium">{selectedSample.sample_name || "—"}</span>
+                                {" · "}
+                                WO: {selectedSample.work_order_number}
+                                {selectedSample.customer_name && ` · ${selectedSample.customer_name}`}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Requested Tests Table with Overrides */}
-                    {selectedWO && requestedTests.length > 0 && (
+                    {selectedSampleUUID && requestedTests.length > 0 && (
                         <div className="rounded-lg border border-border-light dark:border-border-dark overflow-hidden">
                             <div className="bg-slate-50 dark:bg-black/20 px-4 py-2 border-b border-border-light dark:border-border-dark flex items-center justify-between">
                                 <span className="text-xs font-bold text-text-main dark:text-white">
@@ -243,7 +365,6 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                                             <th className="text-left px-4 py-2 font-medium text-text-secondary">Parameter</th>
                                             <th className="text-left px-4 py-2 font-medium text-text-secondary hidden md:table-cell">Matrix</th>
                                             <th className="text-left px-4 py-2 font-medium text-text-secondary hidden lg:table-cell">Method</th>
-                                            <th className="text-center px-4 py-2 font-medium text-text-secondary">Samples</th>
                                             <th className="text-left px-4 py-2 font-medium text-text-secondary">Due Date</th>
                                             <th className="text-left px-4 py-2 font-medium text-text-secondary">Analyst</th>
                                         </tr>
@@ -268,9 +389,6 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                                                     </td>
                                                     <td className="px-4 py-2 hidden lg:table-cell">
                                                         <span className="text-xs font-mono text-text-secondary">{test.method}</span>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        <span className="text-xs font-medium">{test.sample_count}</span>
                                                     </td>
                                                     <td className="px-4 py-2">
                                                         <input
@@ -319,27 +437,37 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                         </div>
                     )}
 
+                    {/* No Tests Found for Sample */}
+                    {selectedSampleUUID && requestedTests.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-6 text-center">
+                            <span className="material-symbols-outlined text-[36px] text-warning/50">info</span>
+                            <p className="mt-2 text-sm text-text-secondary">
+                                No matching test rules found for this sample&apos;s matrix.
+                            </p>
+                        </div>
+                    )}
+
                     {/* Generate Button */}
                     <div className="flex justify-end gap-3 pt-2">
-                        {selectedWO && (
+                        {selectedSampleUUID && requestedTests.length > 0 && (
                             <button
                                 onClick={handleGenerateTasks}
                                 className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover"
                             >
                                 <span className="material-symbols-outlined text-[18px]">add_task</span>
-                                Generate {requestedTests.length * (selectedWorkOrder?.sample_count || 1)} Tasks
+                                Generate {requestedTests.length} Tasks
                             </button>
                         )}
                     </div>
 
                     {/* Empty State */}
-                    {!selectedWO && (
+                    {!selectedSampleUUID && (
                         <div className="flex flex-col items-center justify-center py-8 text-center">
                             <span className="material-symbols-outlined text-[48px] text-text-secondary/30">
                                 playlist_add
                             </span>
                             <p className="mt-2 text-sm text-text-secondary">
-                                Select a work order to generate test tasks
+                                Select a sample ID to generate test tasks
                             </p>
                         </div>
                     )}
@@ -359,7 +487,7 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                                     Confirm Task Generation
                                 </h3>
                                 <p className="text-sm text-text-secondary">
-                                    {generatedTasks.length} tasks will be created
+                                    {generatedTasks.length} tasks will be created for {selectedSample?.sample_id}
                                 </p>
                             </div>
                         </div>
@@ -375,7 +503,7 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                             <table className="w-full text-sm">
                                 <thead className="bg-slate-50 dark:bg-black/20 sticky top-0">
                                     <tr>
-                                        <th className="text-left px-3 py-2">Sample</th>
+                                        <th className="text-left px-3 py-2">Sample ID</th>
                                         <th className="text-left px-3 py-2">Parameter</th>
                                         <th className="text-left px-3 py-2">Due Date</th>
                                         <th className="text-left px-3 py-2">Analyst</th>
@@ -384,7 +512,7 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                                 <tbody className="divide-y divide-border-light dark:divide-border-dark">
                                     {generatedTasks.map(task => (
                                         <tr key={task.id} className={cn(task.qualification_warning && "bg-warning/5")}>
-                                            <td className="px-3 py-2">{task.sample_name}</td>
+                                            <td className="px-3 py-2 font-mono text-xs">{task.sample_id_display}</td>
                                             <td className="px-3 py-2 font-medium">{task.parameter_name}</td>
                                             <td className="px-3 py-2 text-xs font-mono">{task.due_date}</td>
                                             <td className="px-3 py-2 text-text-secondary flex items-center gap-1">
@@ -410,10 +538,11 @@ export default function TaskGeneratorPanel({ onTasksGenerated }: { onTasksGenera
                             </button>
                             <button
                                 onClick={handleConfirmGeneration}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-success hover:bg-success/90 rounded-lg"
+                                disabled={isSubmitting}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-success hover:bg-success/90 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <span className="material-symbols-outlined text-[18px]">check</span>
-                                Create Tasks
+                                <span className="material-symbols-outlined text-[18px]">{isSubmitting ? "hourglass_empty" : "check"}</span>
+                                {isSubmitting ? "Creating..." : "Create Tasks"}
                             </button>
                         </div>
                     </div>

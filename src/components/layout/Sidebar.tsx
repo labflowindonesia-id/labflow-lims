@@ -46,20 +46,6 @@ export function Sidebar({ role = "admin", className }: SidebarProps) {
                     );
                 })}
             </nav>
-
-            <div className="flex-1"></div>
-
-            <nav className="flex w-full flex-col gap-2 px-2">
-                <Link
-                    href="/settings"
-                    className="group relative flex items-center justify-center rounded-lg p-2 text-text-secondary transition-colors hover:bg-background-light hover:text-primary dark:hover:bg-background-dark"
-                >
-                    <span className="material-symbols-outlined">settings</span>
-                    <span className="pointer-events-none absolute left-full z-50 ml-3 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
-                        Settings
-                    </span>
-                </Link>
-            </nav>
         </aside>
     );
 }

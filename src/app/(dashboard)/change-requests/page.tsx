@@ -5,7 +5,7 @@ import { ActionToolbar } from "@/components/ui/Toolbar";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
 import { Label } from "@/components/ui/Label";
-import { MOCK_WORK_ORDERS } from "@/data/mock-db";
+import { useWorkOrders } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
 
 type CRType = "ADD_TEST" | "CANCEL_TEST" | "CHANGE_DUE_DATE" | "EDIT_METADATA";
@@ -28,6 +28,8 @@ interface ChangeRequest {
 }
 
 export default function ChangeRequestsPage() {
+    const { data: workOrders = [] } = useWorkOrders();
+
     const [filterStatus, setFilterStatus] = useState<CRStatus | "">("");
     const [searchQuery, setSearchQuery] = useState("");
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -135,12 +137,12 @@ export default function ChangeRequestsPage() {
     const handleCreateCR = () => {
         if (!newCR.workOrderId || !newCR.description.trim()) return;
 
-        const wo = MOCK_WORK_ORDERS.find(w => w.id === newCR.workOrderId);
+        const wo = workOrders.find(w => w.id === newCR.workOrderId);
         const newRequest: ChangeRequest = {
             id: `cr-${Date.now()}`,
             crNumber: `CR-2024-${String(changeRequests.length + 1).padStart(4, "0")}`,
             workOrderId: newCR.workOrderId,
-            workOrderNo: wo?.work_order_no || "Unknown",
+            workOrderNo: wo?.work_order_number || "Unknown",
             type: newCR.type,
             description: newCR.description,
             requestedBy: "Current User",
@@ -454,8 +456,8 @@ export default function ChangeRequestsPage() {
                                     onChange={(e) => setNewCR({ ...newCR, workOrderId: e.target.value })}
                                 >
                                     <option value="">Select work order...</option>
-                                    {MOCK_WORK_ORDERS.map(wo => (
-                                        <option key={wo.id} value={wo.id}>{wo.work_order_no}</option>
+                                    {workOrders.map(wo => (
+                                        <option key={wo.id} value={wo.id}>{wo.work_order_number}</option>
                                     ))}
                                 </select>
                             </div>

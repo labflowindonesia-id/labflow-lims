@@ -4,28 +4,32 @@ import { useState, useMemo } from "react";
 import { ActionToolbar } from "@/components/ui/Toolbar";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
-import { MOCK_WORK_ORDERS, MOCK_CUSTOMERS, MOCK_MATRICES } from "@/data/mock-db";
+import { useWorkOrders, useCustomers, useSampleMatrices, useReports } from "@/hooks/use-supabase";
+import type { ReportStatus } from "@/types/database";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
-type ReportStatus = "DRAFT" | "PUBLISHED" | "LOCKED";
-
-interface Report {
+// Map db reports to the view model
+interface ReportView {
     id: string;
     reportNumber: string;
-    version: string;
+    version: number;
     workOrderId: string;
     workOrderNo: string;
     customerId: string;
     customerName: string;
     matrix: string;
     createdAt: Date;
-    publishedAt?: Date;
     status: ReportStatus;
     isLocked: boolean;
 }
 
 export default function ReportsPage() {
+    const { data: workOrders = [] } = useWorkOrders();
+    const { data: customers = [] } = useCustomers();
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: dbReports = [] } = useReports();
+
     const [searchQuery, setSearchQuery] = useState("");
     const [filterCustomer, setFilterCustomer] = useState("");
     const [filterMatrix, setFilterMatrix] = useState("");
@@ -33,57 +37,37 @@ export default function ReportsPage() {
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
 
-    // Mock published reports
-    const mockReports: Report[] = useMemo(() => [
-        {
-            id: "rpt-001",
-            reportNumber: "RPT-2024-0001",
-            version: "R01",
-            workOrderId: MOCK_WORK_ORDERS[0]?.id || "wo-001",
-            workOrderNo: MOCK_WORK_ORDERS[0]?.work_order_no || "WO-24-0001",
-            customerId: "cust-001",
-            customerName: "PT Industri Maju",
-            matrix: "Water",
-            createdAt: new Date("2024-01-15"),
-            publishedAt: new Date("2024-01-16"),
-            status: "LOCKED",
-            isLocked: true
-        },
-        {
-            id: "rpt-002",
-            reportNumber: "RPT-2024-0002",
-            version: "R02",
-            workOrderId: MOCK_WORK_ORDERS[1]?.id || "wo-002",
-            workOrderNo: MOCK_WORK_ORDERS[1]?.work_order_no || "WO-24-0002",
-            customerId: "cust-002",
-            customerName: "CV Sejahtera Abadi",
-            matrix: "Soil",
-            createdAt: new Date("2024-01-20"),
-            publishedAt: new Date("2024-01-21"),
-            status: "PUBLISHED",
-            isLocked: false
-        },
-        {
-            id: "rpt-003",
-            reportNumber: "RPT-2024-0003",
-            version: "R01",
-            workOrderId: MOCK_WORK_ORDERS[2]?.id || "wo-003",
-            workOrderNo: MOCK_WORK_ORDERS[2]?.work_order_no || "WO-24-0003",
-            customerId: "cust-001",
-            customerName: "PT Industri Maju",
-            matrix: "Wastewater",
-            createdAt: new Date("2024-02-01"),
-            status: "DRAFT",
-            isLocked: false
-        }
-    ], []);
+    // Map dbReports to view model
+    const mappedReports: ReportView[] = useMemo(() => {
+        return dbReports.map(r => {
+            const wo = workOrders.find(w => w.id === r.work_order_id);
+            return {
+                id: r.id,
+                reportNumber: r.report_number,
+                version: r.revision_number,
+                workOrderId: r.work_order_id,
+                workOrderNo: wo?.work_order_number || "-",
+                customerId: wo?.customer_id || "-",
+                customerName: wo?.customer_name_snapshot || "-",
+                matrix: "—", // Details normally at sample level
+                createdAt: new Date(r.created_at),
+                status: r.status,
+                isLocked: r.is_locked
+            };
+        });
+    }, [dbReports, workOrders]);
 
     // Pending generation (work orders not yet having reports)
-    const pendingOrders = MOCK_WORK_ORDERS.filter(wo => wo.status === "COMPLETED" || wo.status === "IN_PROGRESS");
+    const pendingOrders = useMemo(() => {
+        return workOrders.filter(wo =>
+            (wo.status === "COMPLETED") &&
+            !dbReports.some(r => r.work_order_id === wo.id)
+        );
+    }, [workOrders, dbReports]);
 
     // Filter reports
     const filteredReports = useMemo(() => {
-        let result = [...mockReports];
+        let result = [...mappedReports];
 
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
@@ -108,12 +92,15 @@ export default function ReportsPage() {
         }
 
         return result;
-    }, [mockReports, searchQuery, filterCustomer, filterMatrix, filterStatus, dateFrom, dateTo]);
+    }, [mappedReports, searchQuery, filterCustomer, filterMatrix, filterStatus, dateFrom, dateTo]);
 
     const statusColors: Record<ReportStatus, string> = {
-        DRAFT: "bg-warning/20 text-warning",
-        PUBLISHED: "bg-success/20 text-success",
-        LOCKED: "bg-slate-100 text-slate-600 dark:bg-white/10"
+        DRAFT: "bg-slate-100 text-slate-600 dark:bg-white/10",
+        SUBMITTED: "bg-info/20 text-info",
+        REVISION_REQUESTED: "bg-warning/20 text-warning",
+        APPROVED: "bg-success/20 text-success",
+        LOCKED: "bg-slate-200 text-slate-700 dark:bg-white/20",
+        RELEASED: "bg-success/20 text-success"
     };
 
     return (
@@ -147,7 +134,7 @@ export default function ReportsPage() {
                         data={pendingOrders.slice(0, 5)}
                         keyExtractor={w => w.id}
                         columns={[
-                            { header: "Order", accessorKey: "work_order_no", className: "font-mono" },
+                            { header: "Order", accessorKey: "work_order_number", className: "font-mono" },
                             { header: "Customer", accessorKey: "customer_name_snapshot" },
                             {
                                 header: "Status",
@@ -203,7 +190,7 @@ export default function ReportsPage() {
                             onChange={(e) => setFilterCustomer(e.target.value)}
                         >
                             <option value="">All Customers</option>
-                            {MOCK_CUSTOMERS.map(c => (
+                            {customers.map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                             ))}
                         </select>
@@ -214,7 +201,7 @@ export default function ReportsPage() {
                             onChange={(e) => setFilterMatrix(e.target.value)}
                         >
                             <option value="">All Matrices</option>
-                            {MOCK_MATRICES.map(m => (
+                            {matrices.map(m => (
                                 <option key={m.id} value={m.name}>{m.name}</option>
                             ))}
                         </select>
@@ -226,8 +213,11 @@ export default function ReportsPage() {
                         >
                             <option value="">All Status</option>
                             <option value="DRAFT">Draft</option>
-                            <option value="PUBLISHED">Published</option>
+                            <option value="SUBMITTED">Submitted</option>
+                            <option value="REVISION_REQUESTED">Revision Req.</option>
+                            <option value="APPROVED">Approved</option>
                             <option value="LOCKED">Locked</option>
+                            <option value="RELEASED">Released</option>
                         </select>
 
                         {/* Date Range */}
@@ -271,7 +261,7 @@ export default function ReportsPage() {
                                     accessorKey: "version",
                                     cell: r => (
                                         <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-bold">
-                                            {r.version}
+                                            R{r.version.toString().padStart(2, "0")}
                                         </span>
                                     )
                                 },
@@ -298,10 +288,14 @@ export default function ReportsPage() {
                                     className: "text-right",
                                     cell: r => (
                                         <div className="flex justify-end gap-2">
-                                            <button className="text-primary hover:underline text-xs">View</button>
+                                            <Link href={`/portal/reports/${r.id}`}>
+                                                <button className="text-primary hover:underline text-xs">View</button>
+                                            </Link>
                                             <button className="text-primary hover:underline text-xs">Download</button>
                                             {!r.isLocked && (
-                                                <button className="text-warning hover:underline text-xs">Revise</button>
+                                                <Link href={`/reports/create/${r.workOrderId}`}>
+                                                    <button className="text-warning hover:underline text-xs">Revise</button>
+                                                </Link>
                                             )}
                                         </div>
                                     )

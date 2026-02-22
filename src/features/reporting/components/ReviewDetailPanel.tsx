@@ -1,24 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { cn } from "@/lib/utils";
-
-interface ChecklistItem {
-    id: string;
-    label: string;
-    description: string;
-    passed: boolean;
-    required: boolean;
-}
-
-interface RevisionEntry {
-    version: string;
-    date: string;
-    author: string;
-    action: "SUBMITTED" | "APPROVED" | "REJECTED" | "REVISED";
-    note: string;
-}
+import { useQueryClient } from "@tanstack/react-query";
+import { insertRow, updateRow } from "@/lib/services";
+import { useAuth } from "@/providers/AuthProvider";
+import {
+    useWorkOrder,
+    useSamplesByWorkOrder,
+    useTestTasks,
+    useTestResults,
+    useTestRunsAll,
+    useResultSubmissionsByWorkOrder,
+    useReviewAuditLogs,
+    useParameters,
+    useUnits,
+    useUsers,
+} from "@/hooks/use-supabase";
 
 interface Props {
     workOrderId: string;
@@ -26,387 +25,515 @@ interface Props {
     onReject?: (reason: string) => void;
 }
 
+interface ChecklistItem {
+    id: string;
+    label: string;
+    description: string;
+    passed: boolean;
+    required: boolean;
+    detail?: string;
+}
+
 export default function ReviewDetailPanel({ workOrderId, onApprove, onReject }: Props) {
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
     const [rejectionReason, setRejectionReason] = useState("");
     const [showRejectModal, setShowRejectModal] = useState(false);
-    const [showDraftPreview, setShowDraftPreview] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Automated checklist items for Smart Review
-    const [checklist] = useState<ChecklistItem[]>([
-        { id: "1", label: "All tests finalized", description: "All assigned test tasks have results entered", passed: true, required: true },
-        { id: "2", label: "QC criteria met", description: "Control chart values within limits", passed: true, required: true },
-        { id: "3", label: "No QC flags", description: "No exceedance alerts on any parameter", passed: false, required: false },
-        { id: "4", label: "Raw data attached", description: "Chromatograms and instrument data linked", passed: true, required: true },
-        { id: "5", label: "Metadata complete", description: "Sample info, analyst, timestamps recorded", passed: true, required: true },
-        { id: "6", label: "Method validation", description: "Correct methods applied per matrix", passed: true, required: true },
-    ]);
+    // Fetch real data
+    const { data: workOrder } = useWorkOrder(workOrderId);
+    const { data: samples = [] } = useSamplesByWorkOrder(workOrderId);
+    const { data: allTasks = [] } = useTestTasks();
+    const { data: allResults = [] } = useTestResults();
+    const { data: allRuns = [] } = useTestRunsAll();
+    const { data: submissions = [] } = useResultSubmissionsByWorkOrder(workOrderId);
+    const { data: auditLogs = [] } = useReviewAuditLogs(workOrderId);
+    const { data: parameters = [] } = useParameters();
+    const { data: units = [] } = useUnits();
+    const { data: users = [] } = useUsers();
 
-    // Revision history
-    const [revisions] = useState<RevisionEntry[]>([
-        { version: "v1.0", date: "2024-01-25 09:00", author: "Analyst A", action: "SUBMITTED", note: "Initial results submitted" },
-        { version: "v1.0", date: "2024-01-25 14:30", author: "Manager B", action: "REJECTED", note: "pH value needs verification - check calibration" },
-        { version: "v1.1", date: "2024-01-25 16:00", author: "Analyst A", action: "REVISED", note: "Recalibrated and re-tested pH" },
-        { version: "v1.1", date: "2024-01-26 10:00", author: "Manager B", action: "SUBMITTED", note: "Re-submitted for approval" },
-    ]);
+    // Derived data
+    const sampleIds = useMemo(() => samples.map((s) => s.id), [samples]);
+    const woTasks = useMemo(
+        () => allTasks.filter((t) => t.sample_id && sampleIds.includes(t.sample_id) && t.status !== "CANCELLED"),
+        [allTasks, sampleIds]
+    );
+    const totalTasks = woTasks.length;
+    const completedTasks = useMemo(() => woTasks.filter((t) => t.status === "COMPLETED"), [woTasks]);
+    const taskIds = useMemo(() => woTasks.map((t) => t.id), [woTasks]);
+    const woResults = useMemo(
+        () => allResults.filter((r) => taskIds.includes(r.task_id)),
+        [allResults, taskIds]
+    );
+    const woRuns = useMemo(
+        () => allRuns.filter((r) => taskIds.includes(r.task_id)),
+        [allRuns, taskIds]
+    );
 
-    const passedRequired = checklist.filter(c => c.required && c.passed).length;
-    const totalRequired = checklist.filter(c => c.required).length;
+    // Helper lookups
+    const paramMap = useMemo(() => {
+        const m: Record<string, string> = {};
+        parameters.forEach((p) => (m[p.id] = p.name));
+        return m;
+    }, [parameters]);
+    const unitMap = useMemo(() => {
+        const m: Record<string, string> = {};
+        units.forEach((u) => (m[u.id] = u.symbol));
+        return m;
+    }, [units]);
+    const userMap = useMemo(() => {
+        const m: Record<string, string> = {};
+        users.forEach((u) => (m[u.id] = u.full_name));
+        return m;
+    }, [users]);
+
+    // ─── SMART REVIEW CHECKLIST ───
+    const checklist = useMemo<ChecklistItem[]>(() => {
+        const allTestsFinalized = totalTasks > 0 && completedTasks.length === totalTasks;
+        const allResultsEntered = completedTasks.length > 0 &&
+            completedTasks.every((t) => woResults.some((r) => r.task_id === t.id));
+        const qcStatuses = woResults.map((r) => r.qc_status).filter(Boolean);
+        const qcMet = qcStatuses.length > 0 && !qcStatuses.some((s) => s === "FAIL");
+        const compStatuses = woResults.map((r) => r.compliance_status).filter(Boolean);
+        const complianceEval = compStatuses.length > 0 && !compStatuses.some((s) => s === "NOT_EVALUATED");
+        const hasSubmission = submissions.some((s) => s.status === "SUBMITTED");
+
+        return [
+            {
+                id: "tests_finalized",
+                label: "All tests finalized",
+                description: "All assigned test tasks have status COMPLETED",
+                passed: allTestsFinalized,
+                required: true,
+                detail: `${completedTasks.length}/${totalTasks} tasks completed`,
+            },
+            {
+                id: "results_entered",
+                label: "All results entered",
+                description: "Every completed task has a matching test result record",
+                passed: allResultsEntered,
+                required: true,
+                detail: `${woResults.length} results for ${completedTasks.length} completed tasks`,
+            },
+            {
+                id: "qc_criteria",
+                label: "QC criteria met",
+                description: "No test result has QC status = FAIL",
+                passed: qcMet,
+                required: true,
+                detail: qcStatuses.length === 0
+                    ? "No QC data available"
+                    : `${qcStatuses.filter((s) => s === "PASS").length}/${qcStatuses.length} passed`,
+            },
+            {
+                id: "compliance",
+                label: "Compliance evaluated",
+                description: "All results have been evaluated against regulatory limits",
+                passed: complianceEval,
+                required: true,
+                detail: compStatuses.length === 0
+                    ? "No compliance data"
+                    : `${compStatuses.filter((s) => s !== "NOT_EVALUATED").length}/${compStatuses.length} evaluated`,
+            },
+            {
+                id: "submitted",
+                label: "Results submitted for review",
+                description: "At least one result submission exists with SUBMITTED status",
+                passed: hasSubmission,
+                required: true,
+                detail: `${submissions.length} submission(s)`,
+            },
+        ];
+    }, [totalTasks, completedTasks, woResults, submissions]);
+
+    const passedRequired = checklist.filter((c) => c.required && c.passed).length;
+    const totalRequired = checklist.filter((c) => c.required).length;
     const allRequiredPassed = passedRequired === totalRequired;
 
-    const handleApprove = () => {
-        if (!allRequiredPassed) return;
-        onApprove?.();
-    };
+    // ─── RESULTS TABLE ───
+    const resultRows = useMemo(() => {
+        return woResults.map((r) => {
+            const task = woTasks.find((t) => t.id === r.task_id);
+            const sample = samples.find((s) => s.id === task?.sample_id);
+            return {
+                id: r.id,
+                sampleLabId: sample?.sample_lab_id || "—",
+                parameter: r.parameter_id ? paramMap[r.parameter_id] || "—" : "—",
+                value: r.is_nd ? "ND" : r.result_value !== null ? String(r.result_value) : r.result_text || "—",
+                unit: r.unit_id ? unitMap[r.unit_id] || "" : "",
+                compliance: r.compliance_status || "NOT_EVALUATED",
+                qcStatus: r.qc_status || "NONE",
+            };
+        });
+    }, [woResults, woTasks, samples, paramMap, unitMap]);
 
-    const handleReject = () => {
-        if (rejectionReason.trim()) {
-            onReject?.(rejectionReason);
-            setShowRejectModal(false);
+    // ─── ACTIONS ───
+    const handleApprove = useCallback(async () => {
+        if (!allRequiredPassed || isSubmitting) return;
+        setIsSubmitting(true);
+
+        try {
+            // 1. Log audit
+            await insertRow("review_audit_logs", {
+                work_order_id: workOrderId,
+                submission_id: submissions[0]?.id || null,
+                action: "APPROVED",
+                performed_by: user?.id || null,
+                notes: `Approved by ${user?.full_name || "Manager"}`,
+            });
+
+            // 2. Update result_submissions → APPROVED
+            for (const sub of submissions.filter((s) => s.status === "SUBMITTED")) {
+                await updateRow("result_submissions", sub.id, {
+                    status: "APPROVED",
+                });
+            }
+
+            // 3. Update work_orders.status → COMPLETED
+            await updateRow("work_orders", workOrderId, {
+                status: "COMPLETED",
+            });
+
+            // 4. Invalidate caches
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["resultSubmissions"] }),
+                queryClient.invalidateQueries({ queryKey: ["reviewAuditLogs"] }),
+                queryClient.invalidateQueries({ queryKey: ["reports"] }),
+                queryClient.invalidateQueries({ queryKey: ["workOrders"] }),
+            ]);
+
+            onApprove?.();
+        } catch (err) {
+            console.error("Approve failed:", err);
+            alert("Failed to approve. Please try again.");
+        } finally {
+            setIsSubmitting(false);
         }
-    };
+    }, [allRequiredPassed, isSubmitting, workOrderId, submissions, user, workOrder, queryClient, onApprove]);
 
+    const handleReject = useCallback(async () => {
+        if (!rejectionReason.trim() || isSubmitting) return;
+        setIsSubmitting(true);
+
+        try {
+            // 1. Log audit
+            await insertRow("review_audit_logs", {
+                work_order_id: workOrderId,
+                submission_id: submissions[0]?.id || null,
+                action: "REJECTED",
+                performed_by: user?.id || null,
+                notes: rejectionReason,
+            });
+
+            // 2. Update result_submissions → RETURNED
+            for (const sub of submissions.filter((s) => s.status === "SUBMITTED")) {
+                await updateRow("result_submissions", sub.id, {
+                    status: "RETURNED",
+                });
+            }
+
+            // 3. Return tasks to analyst worklist (IN_PROGRESS)
+            for (const task of completedTasks) {
+                await updateRow("test_tasks", task.id, {
+                    status: "IN_PROGRESS",
+                });
+            }
+
+            // 4. Invalidate caches
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["resultSubmissions"] }),
+                queryClient.invalidateQueries({ queryKey: ["reviewAuditLogs"] }),
+                queryClient.invalidateQueries({ queryKey: ["testTasks"] }),
+                queryClient.invalidateQueries({ queryKey: ["workOrders"] }),
+            ]);
+
+            setShowRejectModal(false);
+            onReject?.(rejectionReason);
+        } catch (err) {
+            console.error("Reject failed:", err);
+            alert("Failed to reject. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [rejectionReason, isSubmitting, workOrderId, submissions, completedTasks, user, queryClient, onReject]);
+
+    // ─── RENDER ───
     return (
         <div className="space-y-4">
-            {/* Automated Checklist */}
+            {/* Work Order Header */}
+            <PremiumCard
+                title={`Review: ${workOrder?.work_order_number || "Loading..."}`}
+                subtitle={workOrder ? `${workOrder.customer_name_snapshot} · ${samples.length} sample(s) · ${totalTasks} test(s)` : "Loading details..."}
+            >
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2">
+                    <div>
+                        <p className="text-xs text-text-tertiary uppercase tracking-wider">Status</p>
+                        <p className="text-sm font-semibold mt-0.5">{workOrder?.status || "—"}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs text-text-tertiary uppercase tracking-wider">Priority</p>
+                        <p className="text-sm font-semibold mt-0.5">{workOrder?.priority || "—"}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs text-text-tertiary uppercase tracking-wider">Received</p>
+                        <p className="text-sm font-semibold mt-0.5">
+                            {workOrder?.received_date
+                                ? new Date(workOrder.received_date).toLocaleDateString("id-ID")
+                                : "—"}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-xs text-text-tertiary uppercase tracking-wider">Due Date</p>
+                        <p className="text-sm font-semibold mt-0.5">
+                            {workOrder?.due_date
+                                ? new Date(workOrder.due_date).toLocaleDateString("id-ID")
+                                : "—"}
+                        </p>
+                    </div>
+                </div>
+            </PremiumCard>
+
+            {/* Smart Review Checklist */}
             <PremiumCard
                 title="Smart Review Checklist"
                 subtitle={`${passedRequired}/${totalRequired} required checks passed`}
                 action={
-                    <span className={cn(
-                        "text-xs px-2 py-1 rounded-full font-bold",
-                        allRequiredPassed
-                            ? "bg-green-100 text-green-700"
-                            : "bg-amber-100 text-amber-700"
-                    )}>
-                        {allRequiredPassed ? "READY" : "PENDING"}
+                    <span
+                        className={cn(
+                            "text-xs font-bold px-2.5 py-1 rounded-full",
+                            allRequiredPassed
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        )}
+                    >
+                        {allRequiredPassed ? "✓ READY" : "⏳ PENDING"}
                     </span>
                 }
             >
-                <div className="space-y-2">
-                    {checklist.map(item => (
-                        <div
-                            key={item.id}
-                            className={cn(
-                                "flex items-center gap-3 p-3 rounded-lg border transition-all",
-                                item.passed
-                                    ? "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-900/10"
-                                    : item.required
-                                        ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/10"
-                                        : "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/10"
-                            )}
-                        >
-                            <span className={cn(
-                                "material-symbols-outlined text-[20px]",
-                                item.passed ? "text-green-600" : item.required ? "text-red-500" : "text-amber-500"
-                            )}>
-                                {item.passed ? "check_circle" : item.required ? "error" : "warning"}
-                            </span>
-                            <div className="flex-1">
-                                <p className="text-sm font-medium text-text-main dark:text-white">
-                                    {item.label}
-                                    {item.required && <span className="text-danger ml-1">*</span>}
-                                </p>
-                                <p className="text-xs text-text-secondary">{item.description}</p>
+                <div className="divide-y divide-border">
+                    {checklist.map((item) => (
+                        <div key={item.id} className="flex items-start gap-3 py-3">
+                            <div
+                                className={cn(
+                                    "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                                    item.passed
+                                        ? "bg-emerald-500/15 text-emerald-600"
+                                        : "bg-red-500/10 text-red-500"
+                                )}
+                            >
+                                <span className="material-symbols-outlined text-[14px]">
+                                    {item.passed ? "check" : "close"}
+                                </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium">{item.label}</p>
+                                    {item.required && (
+                                        <span className="text-[10px] text-red-400 font-bold uppercase">Required</span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-text-tertiary mt-0.5">{item.description}</p>
+                                {item.detail && (
+                                    <p className="text-xs text-text-secondary mt-1 font-mono">{item.detail}</p>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             </PremiumCard>
 
-            {/* Revision History Timeline */}
-            <PremiumCard title="Revision History">
-                <div className="space-y-4">
-                    {revisions.map((entry, idx) => (
-                        <div key={idx} className="flex items-start gap-3">
-                            {/* Timeline dot */}
-                            <div className="flex flex-col items-center">
-                                <div className={cn(
-                                    "w-3 h-3 rounded-full mt-1",
-                                    entry.action === "APPROVED" ? "bg-green-500" :
-                                        entry.action === "REJECTED" ? "bg-red-500" :
-                                            entry.action === "REVISED" ? "bg-blue-500" :
-                                                "bg-slate-400"
-                                )} />
-                                {idx < revisions.length - 1 && (
-                                    <div className="w-0.5 flex-1 min-h-[40px] bg-slate-200 dark:bg-slate-700" />
-                                )}
-                            </div>
-                            {/* Content */}
-                            <div className="flex-1 pb-4">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-mono font-bold text-text-main dark:text-white">
-                                        {entry.version}
-                                    </span>
-                                    <span className={cn(
-                                        "text-[10px] px-1.5 py-0.5 rounded font-bold uppercase",
-                                        entry.action === "APPROVED" ? "bg-green-100 text-green-700" :
-                                            entry.action === "REJECTED" ? "bg-red-100 text-red-700" :
-                                                entry.action === "REVISED" ? "bg-blue-100 text-blue-700" :
-                                                    "bg-slate-100 text-slate-600"
-                                    )}>
-                                        {entry.action}
-                                    </span>
+            {/* Results Summary */}
+            <PremiumCard
+                title="Test Results Summary"
+                subtitle={`${resultRows.length} result(s) from ${completedTasks.length} completed task(s)`}
+            >
+                {resultRows.length === 0 ? (
+                    <p className="text-sm text-text-tertiary text-center py-6">
+                        No test results available yet
+                    </p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-border text-left">
+                                    <th className="py-2 px-2 text-xs font-semibold text-text-tertiary uppercase">Sample</th>
+                                    <th className="py-2 px-2 text-xs font-semibold text-text-tertiary uppercase">Parameter</th>
+                                    <th className="py-2 px-2 text-xs font-semibold text-text-tertiary uppercase text-right">Value</th>
+                                    <th className="py-2 px-2 text-xs font-semibold text-text-tertiary uppercase text-center">Compliance</th>
+                                    <th className="py-2 px-2 text-xs font-semibold text-text-tertiary uppercase text-center">QC</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/50">
+                                {resultRows.map((row) => (
+                                    <tr key={row.id} className="hover:bg-surface-secondary/50 dark:hover:bg-surface-dark/50">
+                                        <td className="py-2 px-2 font-mono text-xs">{row.sampleLabId}</td>
+                                        <td className="py-2 px-2">{row.parameter}</td>
+                                        <td className="py-2 px-2 text-right font-mono">
+                                            {row.value} {row.unit && <span className="text-text-tertiary">{row.unit}</span>}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                            <span
+                                                className={cn(
+                                                    "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
+                                                    row.compliance === "PASS"
+                                                        ? "bg-emerald-500/10 text-emerald-600"
+                                                        : row.compliance === "FAIL"
+                                                            ? "bg-red-500/10 text-red-600"
+                                                            : "bg-gray-500/10 text-gray-500"
+                                                )}
+                                            >
+                                                {row.compliance}
+                                            </span>
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                            <span
+                                                className={cn(
+                                                    "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
+                                                    row.qcStatus === "PASS"
+                                                        ? "bg-emerald-500/10 text-emerald-600"
+                                                        : row.qcStatus === "FAIL"
+                                                            ? "bg-red-500/10 text-red-600"
+                                                            : "bg-gray-500/10 text-gray-500"
+                                                )}
+                                            >
+                                                {row.qcStatus}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </PremiumCard>
+
+            {/* Audit History Timeline */}
+            <PremiumCard
+                title="Review History"
+                subtitle="Audit trail of all review actions"
+            >
+                {auditLogs.length === 0 ? (
+                    <p className="text-sm text-text-tertiary text-center py-6">
+                        No review history yet
+                    </p>
+                ) : (
+                    <div className="space-y-3">
+                        {auditLogs.map((log, idx) => {
+                            const actionConfig: Record<string, { icon: string; color: string }> = {
+                                SUBMITTED: { icon: "send", color: "text-blue-500" },
+                                APPROVED: { icon: "check_circle", color: "text-emerald-500" },
+                                REJECTED: { icon: "cancel", color: "text-red-500" },
+                                REVISION_REQUESTED: { icon: "edit_note", color: "text-amber-500" },
+                            };
+                            const config = actionConfig[log.action] || { icon: "info", color: "text-gray-500" };
+
+                            return (
+                                <div key={log.id} className="flex gap-3">
+                                    <div className="flex flex-col items-center">
+                                        <span className={cn("material-symbols-outlined text-[20px]", config.color)}>
+                                            {config.icon}
+                                        </span>
+                                        {idx < auditLogs.length - 1 && (
+                                            <div className="w-px h-full bg-border mt-1" />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 pb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-semibold">{log.action}</span>
+                                            <span className="text-xs text-text-tertiary">
+                                                by {log.performed_by ? userMap[log.performed_by] || "Unknown" : "System"}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-text-tertiary mt-0.5">
+                                            {new Date(log.created_at).toLocaleString("id-ID")}
+                                        </p>
+                                        {log.notes && (
+                                            <p className="text-sm text-text-secondary mt-1 bg-surface-secondary dark:bg-surface-dark rounded px-2 py-1">
+                                                {log.notes}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
-                                <p className="text-sm text-text-main dark:text-white mt-1">{entry.note}</p>
-                                <p className="text-[11px] text-text-secondary mt-0.5">
-                                    {entry.author} • {entry.date}
-                                </p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </PremiumCard>
 
             {/* Action Buttons */}
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setShowDraftPreview(true)}
-                    className="flex-1 py-3 border border-border-light rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-slate-50 dark:border-border-dark dark:hover:bg-white/5"
-                >
-                    <span className="material-symbols-outlined text-[18px]">preview</span>
-                    Preview Draft CoA
-                </button>
+            <div className="flex gap-3 justify-end">
                 <button
                     onClick={() => setShowRejectModal(true)}
-                    className="px-6 py-3 border border-danger text-danger rounded-lg text-sm font-bold hover:bg-danger/10"
+                    disabled={isSubmitting}
+                    className="px-4 py-2.5 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 text-sm font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 disabled:opacity-50"
                 >
-                    Reject
+                    <span className="material-symbols-outlined text-[18px]">block</span>
+                    Reject / Return
                 </button>
                 <button
                     onClick={handleApprove}
-                    disabled={!allRequiredPassed}
+                    disabled={!allRequiredPassed || isSubmitting}
                     className={cn(
-                        "px-6 py-3 rounded-lg text-sm font-bold text-white flex items-center gap-2 shadow-lg",
-                        allRequiredPassed
-                            ? "bg-success hover:bg-success/90"
-                            : "bg-slate-300 cursor-not-allowed"
+                        "px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2",
+                        allRequiredPassed && !isSubmitting
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                            : "bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed"
                     )}
                 >
-                    <span className="material-symbols-outlined text-[18px]">check</span>
-                    Approve
+                    {isSubmitting ? (
+                        <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                    ) : (
+                        <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                    )}
+                    {isSubmitting ? "Processing..." : "Approve & Generate Report"}
                 </button>
             </div>
 
-            {/* Rejection Modal */}
+            {/* Reject Modal */}
             {showRejectModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-md shadow-xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                                <span className="material-symbols-outlined text-red-600">undo</span>
-                            </div>
+                            <span className="material-symbols-outlined text-red-500 text-2xl">report</span>
                             <div>
-                                <h3 className="text-lg font-bold text-text-main dark:text-white">
-                                    Reject & Request Revision
-                                </h3>
+                                <h3 className="font-semibold text-lg">Reject Submission</h3>
                                 <p className="text-sm text-text-secondary">
-                                    WO: {workOrderId}
+                                    This will return results to the analyst for revision
                                 </p>
                             </div>
                         </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-sm font-medium text-text-main dark:text-white block mb-1">
-                                    Reason for Rejection *
-                                </label>
-                                <textarea
-                                    value={rejectionReason}
-                                    onChange={(e) => setRejectionReason(e.target.value)}
-                                    rows={4}
-                                    placeholder="Specify which results need revision and why..."
-                                    className="w-full border border-border-light rounded-lg p-3 text-sm dark:border-border-dark dark:bg-background-dark resize-none"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex gap-3 mt-6">
+                        <textarea
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            placeholder="Enter reason for rejection..."
+                            className="w-full h-28 px-3 py-2 rounded-lg border border-border bg-surface-secondary dark:bg-surface-dark text-sm resize-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none"
+                        />
+                        <div className="flex justify-end gap-2 mt-4">
                             <button
-                                onClick={() => setShowRejectModal(false)}
-                                className="flex-1 px-4 py-2 text-text-secondary hover:text-text-main"
+                                onClick={() => { setShowRejectModal(false); setRejectionReason(""); }}
+                                className="px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-secondary dark:hover:bg-surface-dark"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleReject}
-                                disabled={!rejectionReason.trim()}
-                                className="flex-1 px-4 py-2 bg-danger text-white rounded-lg font-medium disabled:opacity-50"
+                                disabled={!rejectionReason.trim() || isSubmitting}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
-                                Submit Rejection
+                                {isSubmitting && (
+                                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                )}
+                                Confirm Rejection
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Draft CoA Preview Modal - Full Featured */}
-            {showDraftPreview && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-surface-dark rounded-xl p-6 w-full max-w-4xl h-[85vh] shadow-xl flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-blue-600">picture_as_pdf</span>
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-bold text-text-main dark:text-white">
-                                        Draft CoA Preview
-                                    </h3>
-                                    <p className="text-xs text-text-secondary">
-                                        WO: {workOrderId} • Review before approval
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => window.print()}
-                                    className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-main flex items-center gap-1 border border-border-light rounded-lg hover:bg-slate-50"
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">print</span>
-                                    Print
-                                </button>
-                                <button
-                                    onClick={() => setShowDraftPreview(false)}
-                                    className="p-1.5 text-text-secondary hover:text-text-main hover:bg-slate-100 rounded-lg"
-                                >
-                                    <span className="material-symbols-outlined">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* PDF Preview Container with Watermark */}
-                        <div className="flex-1 overflow-auto bg-slate-100 rounded-lg p-6 dark:bg-black/20 relative">
-                            {/* Watermark Overlay */}
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                <div className="transform rotate-[-30deg] text-red-500/20 font-black text-[80px] tracking-widest whitespace-nowrap select-none">
-                                    DRAFT - NOT FINAL
-                                </div>
-                            </div>
-
-                            {/* CoA Document Content */}
-                            <div className="bg-white rounded-lg shadow-lg p-8 relative z-0 max-w-3xl mx-auto">
-                                {/* Header */}
-                                <div className="border-b-2 border-primary pb-4 mb-6">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h1 className="text-2xl font-bold text-primary">LabFlow Testing Laboratory</h1>
-                                            <p className="text-sm text-text-secondary">ISO/IEC 17025:2017 Accredited</p>
-                                            <p className="text-xs text-text-secondary mt-1">Jl. Lab Utama No. 123, Jakarta</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-xs text-danger bg-danger/10 px-2 py-1 rounded font-bold mb-2">
-                                                DRAFT PREVIEW
-                                            </div>
-                                            <p className="text-sm font-bold">Report: RPT-2024-{workOrderId.slice(-4)}</p>
-                                            <p className="text-xs text-text-secondary">Version: R01 (Draft)</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Sample Info */}
-                                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-                                    <div>
-                                        <p className="text-text-secondary">Customer</p>
-                                        <p className="font-medium">PT Maju Jaya Industries</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-text-secondary">Sample Name</p>
-                                        <p className="font-medium">Inlet Water - Process Unit A</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-text-secondary">Received Date</p>
-                                        <p className="font-medium">2024-01-25</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-text-secondary">Analysis Date</p>
-                                        <p className="font-medium">2024-01-26</p>
-                                    </div>
-                                </div>
-
-                                {/* Test Results Table */}
-                                <div className="mb-6">
-                                    <h3 className="text-sm font-bold text-text-main mb-3 border-b pb-2">TEST RESULTS</h3>
-                                    <table className="w-full text-sm">
-                                        <thead className="bg-slate-50">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-medium">Parameter</th>
-                                                <th className="px-3 py-2 text-center font-medium">Result</th>
-                                                <th className="px-3 py-2 text-center font-medium">Unit</th>
-                                                <th className="px-3 py-2 text-center font-medium">Method</th>
-                                                <th className="px-3 py-2 text-center font-medium">Limit</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr className="border-b">
-                                                <td className="px-3 py-2">pH</td>
-                                                <td className="px-3 py-2 text-center font-mono">7.2</td>
-                                                <td className="px-3 py-2 text-center">-</td>
-                                                <td className="px-3 py-2 text-center text-xs">APHA 4500-H⁺</td>
-                                                <td className="px-3 py-2 text-center text-xs">6.0 - 9.0</td>
-                                            </tr>
-                                            <tr className="border-b">
-                                                <td className="px-3 py-2">BOD₅</td>
-                                                <td className="px-3 py-2 text-center font-mono">45</td>
-                                                <td className="px-3 py-2 text-center">mg/L</td>
-                                                <td className="px-3 py-2 text-center text-xs">APHA 5210B</td>
-                                                <td className="px-3 py-2 text-center text-xs">&lt;50</td>
-                                            </tr>
-                                            <tr className="border-b">
-                                                <td className="px-3 py-2">COD</td>
-                                                <td className="px-3 py-2 text-center font-mono">98</td>
-                                                <td className="px-3 py-2 text-center">mg/L</td>
-                                                <td className="px-3 py-2 text-center text-xs">APHA 5220B</td>
-                                                <td className="px-3 py-2 text-center text-xs">&lt;100</td>
-                                            </tr>
-                                            <tr className="border-b">
-                                                <td className="px-3 py-2">TSS</td>
-                                                <td className="px-3 py-2 text-center font-mono">28</td>
-                                                <td className="px-3 py-2 text-center">mg/L</td>
-                                                <td className="px-3 py-2 text-center text-xs">APHA 2540D</td>
-                                                <td className="px-3 py-2 text-center text-xs">&lt;50</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                {/* QC Summary */}
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="material-symbols-outlined text-blue-600 text-[18px]">verified</span>
-                                        <span className="text-sm font-bold text-blue-800">QC Summary</span>
-                                    </div>
-                                    <p className="text-xs text-blue-700">
-                                        All control standards within acceptance limits. Duplicate analysis RPD: 3.2% (limit: &lt;20%).
-                                        Spike recovery: 98.5% (acceptance: 80-120%).
-                                    </p>
-                                </div>
-
-                                {/* Footer Note */}
-                                <div className="text-[10px] text-text-secondary border-t pt-4">
-                                    <p>* Results apply only to the sample(s) tested.</p>
-                                    <p>* This is a DRAFT document - NOT FOR OFFICIAL USE.</p>
-                                    <p className="mt-2 font-bold text-danger">
-                                        WATERMARKED DRAFT - Pending Manager Approval
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Modal Footer */}
-                        <div className="flex items-center justify-between pt-4 border-t mt-4">
-                            <span className="text-xs text-text-secondary flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[14px]">info</span>
-                                This is a preview only. Final CoA will be generated after approval.
-                            </span>
-                            <button
-                                onClick={() => setShowDraftPreview(false)}
-                                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover"
-                            >
-                                Close Preview
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {/* Submitting overlay */}
+            {isSubmitting && (
+                <div className="fixed inset-0 z-40 bg-black/10" />
             )}
         </div>
     );

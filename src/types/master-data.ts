@@ -45,7 +45,7 @@ export interface Instrument {
     code?: string;
     model?: string;
     location?: string;
-    status?: "READY" | "IN_USE" | "MAINTENANCE" | "CALIBRATION";
+    status?: "CALIBRATED" | "NOT_CALIBRATED" | "IN_REPAIR";
     calibration_due_date?: Date;
     is_active: boolean;
 }

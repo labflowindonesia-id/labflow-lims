@@ -2,14 +2,20 @@
 
 import { useState, useMemo } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { MOCK_TASKS, MOCK_INSTRUMENTS, MOCK_USERS } from "@/data/mock-db";
+import { useTestTasks, useInstruments, useUsers } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
+import type { Instrument, User } from "@/types/database";
 
 type ViewMode = "instrument" | "analyst";
 
 export default function ScheduleTimelineView() {
     const [viewMode, setViewMode] = useState<ViewMode>("instrument");
     const [weekOffset, setWeekOffset] = useState(0);
+
+    // Supabase data
+    const { data: tasks = [] } = useTestTasks();
+    const { data: instruments = [] } = useInstruments();
+    const { data: users = [] } = useUsers();
 
     // Generate dates for the week
     const weekDays = useMemo(() => {
@@ -25,17 +31,18 @@ export default function ScheduleTimelineView() {
     }, [weekOffset]);
 
     // Get analysts only
-    const analysts = MOCK_USERS.filter(u => u.role === "ANALYST");
+    const analysts = (users || []).filter(u => u.role === "ANALYST");
 
     // Calculate workload per resource per day
     const getWorkload = (resourceId: string, date: Date, type: ViewMode): number => {
-        return MOCK_TASKS.filter(t => {
+        return (tasks || []).filter(t => {
+            if (!t.due_date) return false;
             const taskDate = new Date(t.due_date);
             const sameDay = taskDate.toDateString() === date.toDateString();
             if (type === "instrument") {
-                return t.instrument_id_snapshot === resourceId && sameDay;
+                return t.instrument_id === resourceId && sameDay;
             } else {
-                return t.assigned_to_user_id === resourceId && sameDay;
+                return t.assigned_to_id === resourceId && sameDay;
             }
         }).length;
     };
@@ -50,7 +57,7 @@ export default function ScheduleTimelineView() {
 
     // Total tasks per day
     const dailyTotals = weekDays.map(day =>
-        MOCK_TASKS.filter(t => new Date(t.due_date).toDateString() === day.toDateString()).length
+        (tasks || []).filter(t => t.due_date && new Date(t.due_date).toDateString() === day.toDateString()).length
     );
 
     return (
@@ -139,7 +146,7 @@ export default function ScheduleTimelineView() {
                     </thead>
                     <tbody>
                         {/* Resource rows */}
-                        {(viewMode === "instrument" ? MOCK_INSTRUMENTS : analysts).map(resource => (
+                        {(viewMode === "instrument" ? (instruments || []) : analysts).map(resource => (
                             <tr key={resource.id} className="border-b border-border-light/50 dark:border-border-dark/50 hover:bg-slate-50 dark:hover:bg-white/5">
                                 <td className="px-3 py-2">
                                     <div className="flex items-center gap-2">
@@ -148,8 +155,8 @@ export default function ScheduleTimelineView() {
                                         </span>
                                         <span className="font-medium text-text-main dark:text-white truncate max-w-[120px]">
                                             {viewMode === "instrument"
-                                                ? (resource as typeof MOCK_INSTRUMENTS[0]).name
-                                                : (resource as typeof MOCK_USERS[0]).full_name
+                                                ? (resource as Instrument).name
+                                                : (resource as User).full_name
                                             }
                                         </span>
                                     </div>

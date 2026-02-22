@@ -1,12 +1,82 @@
+"use client";
+
+import { useMemo } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { MOCK_WORK_ORDERS } from "@/data/mock-db";
+import {
+    useWorkOrder,
+    useSamplesByWorkOrder,
+    useTestTasks,
+    useTestResults,
+    useParameters,
+    useUnits,
+    useMethods,
+    useSampleMatrices
+} from "@/hooks/use-supabase";
 
 interface CoAPreviewProps {
     workOrderId: string;
 }
 
 export function CoAPreview({ workOrderId }: CoAPreviewProps) {
-    const wo = MOCK_WORK_ORDERS.find(w => w.id === workOrderId) || MOCK_WORK_ORDERS[0];
+    const { data: wo, isLoading: woLoading } = useWorkOrder(workOrderId);
+    const { data: samples = [], isLoading: samplesLoading } = useSamplesByWorkOrder(workOrderId);
+    const { data: allTasks = [], isLoading: tasksLoading } = useTestTasks();
+    const { data: allResults = [], isLoading: resultsLoading } = useTestResults();
+    const { data: parameters = [] } = useParameters();
+    const { data: units = [] } = useUnits();
+    const { data: methods = [] } = useMethods();
+    const { data: matrices = [] } = useSampleMatrices();
+
+    const isLoading = woLoading || samplesLoading || tasksLoading || resultsLoading;
+
+    const matrixDisplay = useMemo(() => {
+        if (!samples.length || !matrices.length) return "-";
+        const mNames = Array.from(new Set(samples.map(s => {
+            const mat = matrices.find(m => m.id === s.matrix_id);
+            return mat ? mat.name : null;
+        }))).filter(Boolean);
+        return mNames.join(", ") || "-";
+    }, [samples, matrices]);
+
+    const resultsData = useMemo(() => {
+        if (!samples.length || !allTasks.length || !allResults.length) return [];
+
+        const sampleIds = samples.map(s => s.id);
+        const filteredTasks = allTasks.filter(t => t.sample_id && sampleIds.includes(t.sample_id) && t.status !== "CANCELLED");
+
+        return filteredTasks.map(task => {
+            const result = allResults.find(r => r.task_id === task.id);
+            const parameter = parameters.find(p => p.id === task.parameter_id);
+            const unit = units.find(u => u.id === result?.unit_id);
+            const method = methods.find(m => m.id === task.method_id);
+
+            let displayResult = "-";
+            if (result) {
+                if (result.is_nd) {
+                    displayResult = result.lod_value ? `< ${result.lod_value}` : "ND";
+                } else {
+                    displayResult = result.result_text || (result.result_value !== null ? String(result.result_value) : "-");
+                }
+            }
+
+            return {
+                id: task.id,
+                parameterName: parameter?.name || "-",
+                unitSymbol: unit?.symbol || "-",
+                result: displayResult,
+                methodCode: method?.code || "-",
+                complianceStat: result?.compliance_status || "NOT_EVALUATED"
+            };
+        });
+    }, [samples, allTasks, allResults, parameters, units, methods]);
+
+    if (isLoading) {
+        return <div className="mx-auto w-[210mm] bg-white shadow-2xl min-h-[297mm] p-12 animate-pulse"><div className="h-8 bg-slate-200 rounded w-1/3 mb-6"></div></div>;
+    }
+
+    if (!wo) {
+        return <div className="p-8 text-center text-red-500">Work Order not found</div>;
+    }
 
     return (
         <div className="mx-auto w-[210mm] bg-white shadow-2xl min-h-[297mm] p-12 text-black print:shadow-none print:w-full">
@@ -44,11 +114,11 @@ export function CoAPreview({ workOrderId }: CoAPreviewProps) {
                     <h3 className="font-bold text-slate-900 border-b border-slate-200 mb-2">Sample Information</h3>
                     <div className="grid grid-cols-[80px_1fr] gap-y-1">
                         <span className="text-slate-500">Order No:</span>
-                        <span className="font-mono">{wo.work_order_no}</span>
+                        <span className="font-mono">{wo.work_order_number}</span>
                         <span className="text-slate-500">Received:</span>
-                        <span>{wo.received_date.toLocaleDateString()}</span>
+                        <span>{new Date(wo.received_date).toLocaleDateString()}</span>
                         <span className="text-slate-500">Matrix:</span>
-                        <span>Wastewater</span>
+                        <span>{matrixDisplay}</span>
                     </div>
                 </div>
             </div>
@@ -65,25 +135,27 @@ export function CoAPreview({ workOrderId }: CoAPreviewProps) {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {/* Mock Results */}
-                        <tr>
-                            <td className="py-2 font-medium">Chemical Oxygen Demand (COD)</td>
-                            <td className="py-2 text-slate-500">mg/L</td>
-                            <td className="py-2 font-bold">45.0</td>
-                            <td className="py-2 text-right text-xs text-slate-500">SNI 6989.2:2009</td>
-                        </tr>
-                        <tr>
-                            <td className="py-2 font-medium">pH</td>
-                            <td className="py-2 text-slate-500">-</td>
-                            <td className="py-2 font-bold">7.2</td>
-                            <td className="py-2 text-right text-xs text-slate-500">SNI 6989.11:2004</td>
-                        </tr>
-                        <tr>
-                            <td className="py-2 font-medium">Total Suspended Solids (TSS)</td>
-                            <td className="py-2 text-slate-500">mg/L</td>
-                            <td className="py-2 font-bold">12.5</td>
-                            <td className="py-2 text-right text-xs text-slate-500">SNI 6989.3:2019</td>
-                        </tr>
+                        {resultsData.length === 0 ? (
+                            <tr>
+                                <td colSpan={4} className="py-4 text-center text-slate-500 italic">No results available.</td>
+                            </tr>
+                        ) : (
+                            resultsData.map(row => (
+                                <tr key={row.id}>
+                                    <td className="py-2 font-medium">{row.parameterName}</td>
+                                    <td className="py-2 text-slate-500">{row.unitSymbol}</td>
+                                    <td className="py-2 font-bold">
+                                        <div className="flex items-center gap-2">
+                                            {row.result}
+                                            {row.complianceStat === "FAIL" && (
+                                                <span className="text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-bold">FAIL</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="py-2 text-right text-xs text-slate-500">{row.methodCode}</td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

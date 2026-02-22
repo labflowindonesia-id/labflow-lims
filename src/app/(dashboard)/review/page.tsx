@@ -1,15 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ActionToolbar } from "@/components/ui/Toolbar";
 import ResultsReviewTable from "@/features/reporting/components/ResultsReviewTable";
 import ReviewDetailPanel from "@/features/reporting/components/ReviewDetailPanel";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function ResultsReviewPage() {
     const [selectedWO, setSelectedWO] = useState<string | null>(null);
+    const queryClient = useQueryClient();
+
+    const handleApprove = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ["workOrders"] });
+        queryClient.invalidateQueries({ queryKey: ["resultSubmissions"] });
+        setSelectedWO(null);
+    }, [queryClient]);
+
+    const handleReject = useCallback((_reason: string) => {
+        queryClient.invalidateQueries({ queryKey: ["resultSubmissions"] });
+        queryClient.invalidateQueries({ queryKey: ["workOrders"] });
+        queryClient.invalidateQueries({ queryKey: ["testTasks"] });
+        setSelectedWO(null);
+    }, [queryClient]);
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6">
             <ActionToolbar
                 title="Results Verification"
                 description="Manager approval workspace"
@@ -17,7 +32,7 @@ export default function ResultsReviewPage() {
                     selectedWO && (
                         <button
                             onClick={() => setSelectedWO(null)}
-                            className="px-4 py-2 text-sm text-text-secondary hover:text-text-main flex items-center gap-1"
+                            className="text-sm text-text-secondary hover:text-primary flex items-center gap-1.5"
                         >
                             <span className="material-symbols-outlined text-[16px]">arrow_back</span>
                             Back to Queue
@@ -29,14 +44,8 @@ export default function ResultsReviewPage() {
                 {selectedWO ? (
                     <ReviewDetailPanel
                         workOrderId={selectedWO}
-                        onApprove={() => {
-                            alert("Results approved! Report ready for generation.");
-                            setSelectedWO(null);
-                        }}
-                        onReject={(reason) => {
-                            alert(`Rejected: ${reason}`);
-                            setSelectedWO(null);
-                        }}
+                        onApprove={handleApprove}
+                        onReject={handleReject}
                     />
                 ) : (
                     <ResultsReviewTable onSelectWO={setSelectedWO} />
@@ -45,4 +54,3 @@ export default function ResultsReviewPage() {
         </div>
     );
 }
-

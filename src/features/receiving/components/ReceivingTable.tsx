@@ -2,7 +2,7 @@
 
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
-import { MOCK_WORK_ORDERS, MOCK_CUSTOMERS } from "@/data/mock-db";
+import { useWorkOrders, useCustomers } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useState, useMemo } from "react";
@@ -11,6 +11,9 @@ import { WorkOrderStatus } from "@/types/master-data";
 type FilterStatus = WorkOrderStatus | "all";
 
 export default function ReceivingTable() {
+    const { data: workOrders = [], isLoading } = useWorkOrders();
+    const { data: customers = [] } = useCustomers();
+
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
     const [customerFilter, setCustomerFilter] = useState<string>("all");
@@ -20,23 +23,23 @@ export default function ReceivingTable() {
 
     // Get unique customers for filter dropdown
     const uniqueCustomers = useMemo(() => {
-        const customerIds = [...new Set(MOCK_WORK_ORDERS.map(w => w.customer_id))];
+        const customerIds = [...new Set(workOrders.map(w => w.customer_id))];
         return customerIds.map(id => {
-            const customer = MOCK_CUSTOMERS.find(c => c.id === id);
+            const customer = customers.find(c => c.id === id);
             return { id, name: customer?.name || "Unknown" };
         });
-    }, []);
+    }, [workOrders, customers]);
 
     // Filter and sort work orders
     const filteredWorkOrders = useMemo(() => {
-        let result = [...MOCK_WORK_ORDERS];
+        let result = [...workOrders];
 
         // Search filter
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(wo =>
-                wo.work_order_no.toLowerCase().includes(q) ||
-                wo.customer_name_snapshot.toLowerCase().includes(q)
+                wo.work_order_number.toLowerCase().includes(q) ||
+                (wo.customer_name_snapshot || "").toLowerCase().includes(q)
             );
         }
 
@@ -68,7 +71,7 @@ export default function ReceivingTable() {
         });
 
         return result;
-    }, [searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
+    }, [workOrders, searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
 
     const statusOptions: { value: FilterStatus; label: string; color: string }[] = [
         { value: "all", label: "All Status", color: "" },
@@ -185,7 +188,7 @@ export default function ReceivingTable() {
 
             {/* Results Count */}
             <div className="mb-3 text-xs text-text-secondary">
-                Showing {filteredWorkOrders.length} of {MOCK_WORK_ORDERS.length} work orders
+                {isLoading ? "Loading..." : `Showing ${filteredWorkOrders.length} of ${workOrders.length} work orders`}
             </div>
 
             {/* Table */}
@@ -197,7 +200,7 @@ export default function ReceivingTable() {
                         window.location.href = `/receiving/${w.id}`;
                     }}
                     columns={[
-                        { header: "Work Order", accessorKey: "work_order_no", className: "font-mono font-medium text-primary" },
+                        { header: "Work Order", accessorKey: "work_order_number", className: "font-mono font-medium text-primary" },
                         { header: "Customer", accessorKey: "customer_name_snapshot" },
                         {
                             header: "Received",

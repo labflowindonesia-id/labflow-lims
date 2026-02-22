@@ -4,8 +4,12 @@ import { ActionToolbar } from "@/components/ui/Toolbar";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { CoAPreview } from "@/features/reporting/components/CoAPreview";
 import { useParams, useRouter } from "next/navigation";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useSamplesByWorkOrder, useSampleMatrices, useReportsByWorkOrder, useWorkOrder } from "@/hooks/use-supabase";
+import { updateRow, insertRow, reportService } from "@/lib/services";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/providers/AuthProvider";
 
 type TemplateType = "standard" | "detailed" | "summary" | "regulatory";
 
@@ -16,38 +20,53 @@ interface SignatureData {
     dataUrl?: string;
 }
 
-interface SampleItem {
-    id: string;
-    name: string;
-    matrix: string;
-    status: "COMPLETED" | "IN_PROGRESS" | "PENDING";
-}
-
 export default function CreateReportPage() {
     const params = useParams();
     const router = useRouter();
     const woId = params.woId as string;
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
 
-    const [isPublished, setIsPublished] = useState(false);
-    const [isLocked, setIsLocked] = useState(false);
+    const { data: dbSamples = [] } = useSamplesByWorkOrder(woId);
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: reports = [] } = useReportsByWorkOrder(woId);
+    const { data: workOrder } = useWorkOrder(woId);
+
+    // The latest report is the first one since useReportsByWorkOrder orders by revision_number desc
+    const latestReport = reports[0];
+
     const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>("standard");
-    const [reportVersion, setReportVersion] = useState("R01");
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [signature, setSignature] = useState<SignatureData | null>(null);
-    const [signerName, setSignerName] = useState("Dr. Ahmad Wijaya");
-    const [signerTitle, setSignerTitle] = useState("Technical Manager");
+    const [signerName, setSignerName] = useState("");
+    const [signerTitle, setSignerTitle] = useState("");
+
+    // Initialize signer with current user if empty
+    useEffect(() => {
+        if (user && !signerName) {
+            setSignerName(user.full_name || "");
+        }
+    }, [user, signerName]);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
 
-    // NEW: Multi-sample selection
-    const [samples] = useState<SampleItem[]>([
-        { id: "smp-001", name: "Inlet Water - PT Maju", matrix: "Water", status: "COMPLETED" },
-        { id: "smp-002", name: "Outlet Water - PT Maju", matrix: "Water", status: "COMPLETED" },
-        { id: "smp-003", name: "Sludge Sample A", matrix: "Sludge", status: "COMPLETED" },
-        { id: "smp-004", name: "Ambient Air Station 1", matrix: "Air", status: "IN_PROGRESS" },
-    ]);
-    const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set(["smp-001", "smp-002"]));
+    // Map DB samples for UI
+    const samples = dbSamples.map(s => ({
+        id: s.id,
+        name: s.sample_name || s.sample_lab_id,
+        matrix: matrices.find(m => m.id === s.matrix_id)?.name || "Unknown",
+        status: "COMPLETED" // Simplification: assume completed since WO is in review/completed
+    }));
+
+    const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set());
+
+    // Auto-select all samples initially
+    useEffect(() => {
+        if (samples.length > 0 && selectedSamples.size === 0) {
+            setSelectedSamples(new Set(samples.map(s => s.id)));
+        }
+    }, [samples, selectedSamples]);
 
     // NEW: QC data toggle
     const [includeQCData, setIncludeQCData] = useState(false);
@@ -59,38 +78,60 @@ export default function CreateReportPage() {
     const [emailMessage, setEmailMessage] = useState("Please find attached the Certificate of Analysis for your samples.");
 
     // NEW: Revision history for auto-versioning
-    interface RevisionEntry {
-        version: string;
-        createdAt: Date;
-        reason?: string;
-        lockedAt?: Date;
-    }
-    const [revisionHistory, setRevisionHistory] = useState<RevisionEntry[]>([
-        { version: "R01", createdAt: new Date("2025-01-25"), reason: "Initial release" }
-    ]);
+    const isPublished = latestReport?.status === "SUBMITTED" || latestReport?.status === "APPROVED" || latestReport?.status === "RELEASED" || latestReport?.status === "LOCKED";
+    const isLocked = latestReport?.is_locked || false;
+    const reportVersion = latestReport ? `R${latestReport.revision_number.toString().padStart(2, "0")}` : "R01";
+
+    const revisionHistory = reports.map(r => ({
+        version: `R${r.revision_number.toString().padStart(2, "0")}`,
+        createdAt: new Date(r.created_at),
+        reason: r.public_notes || r.internal_notes || (r.revision_number === 1 ? "Initial release" : "Revision"),
+        lockedAt: r.locked_at ? new Date(r.locked_at) : undefined
+    }));
+
     const [showRevisionModal, setShowRevisionModal] = useState(false);
     const [revisionReason, setRevisionReason] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Auto-version function - creates new version when revision occurs after lock
-    const handleRevisionRequest = () => {
-        if (!revisionReason.trim()) return;
+    const handleRevisionRequest = async () => {
+        if (!revisionReason.trim() || !latestReport) return;
+        setIsSubmitting(true);
+        try {
+            // 1. Lock current version
+            await updateRow("reports", latestReport.id, {
+                is_locked: true,
+                locked_at: new Date().toISOString(),
+                locked_by: user?.id || null
+            });
 
-        const currentVersionNum = parseInt(reportVersion.substring(1));
-        const nextVersion = `R${String(currentVersionNum + 1).padStart(2, "0")}`;
+            // 2. Create new draft report
+            const newRevNum = latestReport.revision_number + 1;
+            const reportNumber = latestReport.report_number; // keep same base number
 
-        // Lock current version
-        setRevisionHistory(prev => [
-            ...prev.map(r => r.version === reportVersion ? { ...r, lockedAt: new Date() } : r),
-            { version: nextVersion, createdAt: new Date(), reason: revisionReason }
-        ]);
+            await insertRow("reports", {
+                report_number: reportNumber,
+                revision_number: newRevNum,
+                work_order_id: woId,
+                status: "DRAFT",
+                title: latestReport.title,
+                generated_by: user?.id || null,
+                generated_at: new Date().toISOString(),
+                is_locked: false,
+                public_notes: revisionReason
+            });
 
-        setReportVersion(nextVersion);
-        setIsLocked(false);
-        setIsPublished(false);
-        setSignature(null);
-        setRevisionReason("");
-        setShowRevisionModal(false);
-        alert(`New version ${nextVersion} created. Previous version ${reportVersion} has been locked.`);
+            queryClient.invalidateQueries({ queryKey: ["reports", "workOrder", woId] });
+            setShowRevisionModal(false);
+            setRevisionReason("");
+            setSignature(null); // Reset signature for new version
+            alert(`New version R${String(newRevNum).padStart(2, "0")} created. Previous version locked.`);
+        } catch (error) {
+            console.error("Failed to create revision", error);
+            alert("Failed to create revision. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const templates: { id: TemplateType; name: string; description: string }[] = [
@@ -100,16 +141,60 @@ export default function CreateReportPage() {
         { id: "regulatory", name: "Regulatory Format", description: "For government submissions" }
     ];
 
-    const handlePublish = () => {
+    const handlePublish = async () => {
         if (!signature) {
             setShowSignatureModal(true);
             return;
         }
-        setIsPublished(true);
+
+        setIsSubmitting(true);
+        try {
+            if (latestReport) {
+                // Update existing report
+                await updateRow("reports", latestReport.id, {
+                    status: "SUBMITTED",
+                    signed_at: new Date().toISOString()
+                });
+            } else {
+                // Create new report
+                const reportNumber = await reportService.generateReportNumber();
+
+                await insertRow("reports", {
+                    report_number: reportNumber,
+                    revision_number: 1,
+                    work_order_id: woId,
+                    status: "SUBMITTED",
+                    title: `Certificate of Analysis — ${workOrder?.work_order_number || woId}`,
+                    generated_by: user?.id || null,
+                    generated_at: new Date().toISOString(),
+                    is_locked: false,
+                    signed_at: new Date().toISOString()
+                });
+            }
+            queryClient.invalidateQueries({ queryKey: ["reports", "workOrder", woId] });
+            queryClient.invalidateQueries({ queryKey: ["reports"] });
+        } catch (error) {
+            console.error("Failed to publish", error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const handleLock = () => {
-        setIsLocked(true);
+    const handleLock = async () => {
+        if (!latestReport) return;
+        setIsSubmitting(true);
+        try {
+            await updateRow("reports", latestReport.id, {
+                is_locked: true,
+                locked_at: new Date().toISOString(),
+                locked_by: user?.id || null
+            });
+            queryClient.invalidateQueries({ queryKey: ["reports", "workOrder", woId] });
+        } catch (error) {
+            console.error("Failed to lock", error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     // Signature canvas handlers
@@ -179,7 +264,7 @@ export default function CreateReportPage() {
                     {isLocked ? "Report Locked" : "Report Published!"}
                 </h2>
                 <p className="text-sm text-text-secondary">
-                    Report Number: RPT-2024-{woId.slice(-4)} • Version: {reportVersion}
+                    Report Number: {latestReport?.report_number} • Version: {reportVersion}
                 </p>
                 {signature && (
                     <p className="text-xs text-text-secondary">
@@ -190,10 +275,11 @@ export default function CreateReportPage() {
                     {!isLocked && (
                         <button
                             onClick={handleLock}
-                            className="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700"
+                            disabled={isSubmitting}
+                            className="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
                         >
                             <span className="material-symbols-outlined text-[14px] mr-1 align-middle">lock</span>
-                            Lock Report
+                            {isSubmitting ? "Locking..." : "Lock Report"}
                         </button>
                     )}
                     <button
@@ -225,10 +311,11 @@ export default function CreateReportPage() {
                         </button>
                         <button
                             onClick={handlePublish}
-                            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover shadow-lg flex items-center gap-1"
+                            disabled={isSubmitting || isPublished}
+                            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover shadow-lg flex items-center gap-1 disabled:opacity-50"
                         >
                             <span className="material-symbols-outlined text-[16px]">verified</span>
-                            Publish & Sign
+                            {isPublished ? "Published" : "Publish & Sign"}
                         </button>
                     </div>
                 }
@@ -571,7 +658,7 @@ export default function CreateReportPage() {
                                 </p>
                                 <div className="flex items-center gap-2 text-sm text-text-secondary">
                                     <span className="material-symbols-outlined text-[16px] text-danger">picture_as_pdf</span>
-                                    RPT-2024-{woId.slice(-4)}-{reportVersion}.pdf
+                                    {latestReport?.report_number}-{reportVersion}.pdf
                                 </div>
                             </div>
                         </div>
@@ -657,11 +744,11 @@ export default function CreateReportPage() {
                             </button>
                             <button
                                 onClick={handleRevisionRequest}
-                                disabled={!revisionReason}
+                                disabled={!revisionReason || isSubmitting}
                                 className="flex-1 px-4 py-2 bg-warning text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 <span className="material-symbols-outlined text-[18px]">add</span>
-                                Create Revision
+                                {isSubmitting ? "Creating..." : "Create Revision"}
                             </button>
                         </div>
                     </div>

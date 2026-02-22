@@ -17,6 +17,12 @@ export const NAV_ITEMS: NavItem[] = [
         roles: ["admin", "manager", "analyst"],
     },
     {
+        title: "Work Orders",
+        href: "/work-orders",
+        icon: "receipt_long",
+        roles: ["admin", "manager"],
+    },
+    {
         title: "Quotations",
         href: "/quotations", // Updated: Points to List
         icon: "request_quote",
@@ -69,5 +75,11 @@ export const NAV_ITEMS: NavItem[] = [
         href: "/archive",
         icon: "inventory_2",
         roles: ["admin", "manager"],
+    },
+    {
+        title: "Settings",
+        href: "/settings",
+        icon: "settings",
+        roles: ["admin", "manager", "analyst"],
     },
 ];

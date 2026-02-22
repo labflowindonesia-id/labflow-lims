@@ -1,16 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { Label } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
-import { MOCK_RULES, MOCK_METHODS, MOCK_INSTRUMENTS } from "@/data/mock-db";
-import { TestTask } from "@/types/master-data";
+import { useMatrixParameterRules, useMethods, useInstruments, useParameters, useSamples, useSampleMatrices, useUnits } from "@/hooks/use-supabase";
+import { TestTask } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/providers/AuthProvider";
 
 interface ResultEntryFormProps {
     task: TestTask;
-    onSave: (result: any) => void;
+    onSave: (result: ResultData) => void | Promise<void>;
+}
+
+interface ResultData {
+    isND: boolean;
+    numericValue: string;
+    qcRecovery: string;
+    runs: Run[];
+    uploadedFiles: UploadedFile[];
+    remarks: string;
+    resultType: "NUMERIC" | "QUALITATIVE";
+    qualitativeValue: string;
+    unitId: string | null;
+    loqValue: number | null;
+    lodValue: number | null;
+    limitMin: number | null;
+    limitMax: number | null;
 }
 
 type RunType = "INITIAL" | "REPEAT" | "RECHECK";
@@ -38,17 +55,76 @@ interface AuditEntry {
 }
 
 export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) {
-    // Fetch Rule Logic
-    const rule = MOCK_RULES.find(r =>
+    // Auth — get logged-in user
+    const { user: authUser } = useAuth();
+    const currentUserName = authUser?.full_name || "Unknown Analyst";
+
+    // Supabase data
+    const { data: rules = [] } = useMatrixParameterRules();
+    const { data: methods = [] } = useMethods();
+    const { data: instruments = [] } = useInstruments();
+    const { data: parameters = [] } = useParameters();
+    const { data: samples = [] } = useSamples();
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: units = [] } = useUnits();
+
+    // Helper functions for lookups
+    const getParameterName = (id: string | null) => {
+        if (!id) return "Unknown Parameter";
+        return (parameters || []).find(p => p.id === id)?.name || "Unknown Parameter";
+    };
+    const getSampleName = (id: string | null) => {
+        if (!id) return "Unknown Sample";
+        return (samples || []).find(s => s.id === id)?.sample_name || "Unknown Sample";
+    };
+    const getMatrixName = (sampleId: string | null) => {
+        if (!sampleId) return "Unknown Matrix";
+        const sample = (samples || []).find(s => s.id === sampleId);
+        return sample ? (matrices || []).find(m => m.id === sample.matrix_id)?.name || "Unknown Matrix" : "Unknown Matrix";
+    };
+
+    // Dynamic unit lookup: parameter → default_unit_id → units table
+    const currentParameter = useMemo(() => (parameters || []).find(p => p.id === task.parameter_id), [parameters, task.parameter_id]);
+    const unitSymbol = useMemo(() => {
+        if (!currentParameter?.default_unit_id) return "—";
+        return (units || []).find(u => u.id === currentParameter.default_unit_id)?.symbol || "—";
+    }, [currentParameter, units]);
+
+    // Dynamic matrix_id lookup from sample
+    const currentSample = useMemo(() => (samples || []).find(s => s.id === task.sample_id), [samples, task.sample_id]);
+    const sampleMatrixId = currentSample?.matrix_id || null;
+
+    // Fetch Rule Logic — use sample's actual matrix_id (not hardcoded)
+    const rule = (rules || []).find(r =>
         r.parameter_id === task.parameter_id &&
-        r.matrix_id === "mat-001"
+        r.matrix_id === sampleMatrixId
     );
+
+    // LOQ/LOD: from parameter
+    const loqDefault = (currentParameter as { loq_default?: number | null })?.loq_default ?? null;
+    const lodDefault = (currentParameter as { lod_default?: number | null })?.lod_default ?? null;
+
+    // Method and instrument from task references
+    const method = (methods || []).find(m => m.id === task.method_id);
+    const instrument = (instruments || []).find(i => i.id === task.instrument_id);
+
+    // Calibration status helpers
+    const getCalibrationBadge = () => {
+        if (!instrument) return { label: "N/A", color: "text-text-secondary" };
+        switch (instrument.status) {
+            case "CALIBRATED": return { label: "Terkalibrasi", color: "text-success" };
+            case "NOT_CALIBRATED": return { label: "Tidak Terkalibrasi", color: "text-danger" };
+            case "IN_REPAIR": return { label: "Dalam Perbaikan", color: "text-warning" };
+            default: return { label: String(instrument.status || "N/A"), color: "text-text-secondary" };
+        }
+    };
+    const calibrationBadge = getCalibrationBadge();
 
     // FORM STATE
     const [isND, setIsND] = useState(false);
-    const [resultType, setResultType] = useState<"NUMERIC" | "QUALITATIVE">("NUMERIC");
+    const [resultType] = useState<"NUMERIC" | "QUALITATIVE">("NUMERIC");
     const [numericValue, setNumericValue] = useState<string>("");
-    const [qualitativeValue, setQualitativeValue] = useState<string>("");
+    const [qualitativeValue] = useState<string>("");
     const [qcRecovery, setQcRecovery] = useState<string>("");
     const [remarks, setRemarks] = useState("");
 
@@ -73,25 +149,29 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
     const [showMethodDetails, setShowMethodDetails] = useState(false);
 
     // Audit Trail
-    const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([
-        { timestamp: new Date(), action: "Task Started", user: "Analyst Kimia" }
-    ]);
+    const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([]);
+
+    // Initialize audit trail with real user name (run once)
+    useState(() => {
+        setAuditTrail([{ timestamp: new Date(), action: "Task Started", user: currentUserName }]);
+    });
 
     // Save Progress
-    const [isSaved, setIsSaved] = useState(false);
     const [lastSaved, setLastSaved] = useState<Date | null>(null);
-
-    // Mock method and instrument data
-    const method = MOCK_METHODS[0];
-    const instrument = MOCK_INSTRUMENTS[0];
 
     // VALIDATION LOGIC
     const numVal = parseFloat(numericValue);
     const recoveryVal = parseFloat(qcRecovery);
 
     let complianceStatus: "PASS" | "FAIL" | "NONE" = "NONE";
-    if (resultType === "NUMERIC" && !isND && !isNaN(numVal) && rule?.limit_type === "MAX" && rule.limit_max) {
-        complianceStatus = numVal <= rule.limit_max ? "PASS" : "FAIL";
+    if (resultType === "NUMERIC" && !isND && !isNaN(numVal)) {
+        if (rule?.limit_min !== undefined && rule?.limit_min !== null && rule?.limit_max !== undefined && rule?.limit_max !== null) {
+            complianceStatus = (numVal >= rule.limit_min && numVal <= rule.limit_max) ? "PASS" : "FAIL";
+        } else if (rule?.limit_max !== undefined && rule?.limit_max !== null) {
+            complianceStatus = numVal <= rule.limit_max ? "PASS" : "FAIL";
+        } else if (rule?.limit_min !== undefined && rule?.limit_min !== null) {
+            complianceStatus = numVal >= rule.limit_min ? "PASS" : "FAIL";
+        }
     }
 
     let qcStatus: "PASS" | "FAIL" | "NONE" = "NONE";
@@ -134,16 +214,15 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
     };
 
     const handleSaveProgress = () => {
-        setIsSaved(true);
         setLastSaved(new Date());
         addAuditEntry("Progress Saved", "Draft saved");
     };
 
     const addAuditEntry = (action: string, details?: string) => {
-        setAuditTrail([...auditTrail, {
+        setAuditTrail(prev => [...prev, {
             timestamp: new Date(),
             action,
-            user: "Analyst Kimia",
+            user: currentUserName,
             details
         }]);
     };
@@ -214,7 +293,7 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                     onChange={(e) => updateRunValue(run.id, e.target.value)}
                                     className="font-mono text-lg"
                                 />
-                                <span className="absolute right-3 top-3 text-sm text-text-secondary font-bold">mg/L</span>
+                                <span className="absolute right-3 top-3 text-sm text-text-secondary font-bold">{unitSymbol}</span>
                             </div>
                         </div>
                     ))}
@@ -271,8 +350,8 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
 
             {/* Main Result Entry */}
             <PremiumCard
-                title={`Result Entry: ${task.parameter_name_snapshot}`}
-                subtitle={`${task.sample_name_snapshot} (${task.matrix_name_snapshot})`}
+                title={`Result Entry: ${getParameterName(task.parameter_id)}`}
+                subtitle={`${getSampleName(task.sample_id)} (${getMatrixName(task.sample_id)})`}
                 action={
                     <div className="flex items-center gap-2">
                         {lastSaved && (
@@ -335,7 +414,7 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                 </button>
                             </div>
                             <div className="text-xs text-text-secondary">
-                                Default: LOQ = {rule?.loq_default || "N/A"}, LOD = {rule?.lod_default || "N/A"}
+                                Default: LOQ = {loqDefault ?? "N/A"}, LOD = {lodDefault ?? "N/A"}
                             </div>
 
                             {showLoqOverride && (
@@ -345,7 +424,7 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                             <Label className="text-xs">LOQ Override</Label>
                                             <Input
                                                 type="number"
-                                                placeholder={rule?.loq_default?.toString()}
+                                                placeholder={loqDefault?.toString()}
                                                 value={loqOverride}
                                                 onChange={(e) => setLoqOverride(e.target.value)}
                                             />
@@ -354,7 +433,7 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                             <Label className="text-xs">LOD Override</Label>
                                             <Input
                                                 type="number"
-                                                placeholder={rule?.lod_default?.toString()}
+                                                placeholder={lodDefault?.toString()}
                                                 value={lodOverride}
                                                 onChange={(e) => setLodOverride(e.target.value)}
                                             />
@@ -382,7 +461,14 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                         {/* Result Type & Value */}
                         <div className="space-y-4">
                             <div className="flex justify-between items-center">
-                                <Label>Final Result</Label>
+                                <div>
+                                    <Label>Final Result</Label>
+                                    {(rule?.limit_min !== null && rule?.limit_min !== undefined) || (rule?.limit_max !== null && rule?.limit_max !== undefined) ? (
+                                        <p className="text-[10px] text-text-secondary mt-0.5 font-medium">
+                                            Limit ({rule?.limit_type || "Standard"}): <span className="font-mono text-primary">{rule?.limit_min ?? "—"}</span> to <span className="font-mono text-primary">{rule?.limit_max ?? "—"}</span> {unitSymbol}
+                                        </p>
+                                    ) : null}
+                                </div>
                                 <label className="flex items-center gap-2 text-xs">
                                     <input type="checkbox" checked={isND} onChange={(e) => setIsND(e.target.checked)} className="rounded" />
                                     Not Detected (ND)
@@ -392,7 +478,7 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                             <div className="relative">
                                 <Input
                                     type="number"
-                                    placeholder={isND ? `< LOD (${rule?.lod_default})` : "Enter final value..."}
+                                    placeholder={isND ? `< LOD (${lodDefault ?? "N/A"})` : "Enter final value..."}
                                     value={isND ? "" : numericValue}
                                     onChange={(e) => setNumericValue(e.target.value)}
                                     disabled={isND}
@@ -402,13 +488,17 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                             complianceStatus === "PASS" ? "border-success text-success bg-success/5" : ""
                                     )}
                                 />
-                                <span className="absolute right-3 top-3 text-sm text-text-secondary font-bold">mg/L</span>
+                                <span className="absolute right-3 top-3 text-sm text-text-secondary font-bold">{unitSymbol}</span>
                             </div>
 
                             {!isND && complianceStatus === "FAIL" && (
-                                <div className="flex items-center gap-2 text-xs font-bold text-danger bg-danger/10 p-2 rounded animate-pulse">
+                                <div className="flex items-center gap-2 text-xs font-bold text-white bg-danger p-2 rounded animate-pulse">
                                     <span className="material-symbols-outlined text-[16px]">warning</span>
-                                    Exceeds Limit ({rule?.limit_max})
+                                    {rule?.limit_min !== null && rule?.limit_max !== null
+                                        ? `Out of Range (${rule?.limit_min} - ${rule?.limit_max})`
+                                        : rule?.limit_max !== null
+                                            ? `Exceeds Max Limit (${rule?.limit_max})`
+                                            : `Below Min Limit (${rule?.limit_min})`}
                                 </div>
                             )}
                         </div>
@@ -447,16 +537,22 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                                 <div className="p-3 rounded-lg border border-border-light bg-background-light/50 space-y-2 text-xs dark:border-border-dark dark:bg-black/20">
                                     <div className="flex justify-between">
                                         <span className="text-text-secondary">Method:</span>
-                                        <span className="font-medium">{method?.name || task.method_id_snapshot}</span>
+                                        <span className="font-medium">{method?.name || "N/A"}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-text-secondary">Instrument:</span>
                                         <span className="font-medium">{instrument?.name || "N/A"}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-text-secondary">Accreditation:</span>
-                                        <span className="font-medium text-success">ISO 17025</span>
+                                        <span className="text-text-secondary">Calibration:</span>
+                                        <span className={cn("font-medium", calibrationBadge.color)}>{calibrationBadge.label}</span>
                                     </div>
+                                    {instrument?.calibration_due_date && (
+                                        <div className="flex justify-between">
+                                            <span className="text-text-secondary">Cal. Due Date:</span>
+                                            <span className="font-medium">{new Date(instrument.calibration_due_date).toLocaleDateString("id-ID")}</span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -505,7 +601,21 @@ export default function ResultEntryForm({ task, onSave }: ResultEntryFormProps) 
                         <button
                             onClick={() => {
                                 addAuditEntry("Result Submitted");
-                                onSave({ isND, numericValue, qcRecovery, runs, uploadedFiles });
+                                onSave({
+                                    isND,
+                                    numericValue,
+                                    qcRecovery,
+                                    runs,
+                                    uploadedFiles,
+                                    remarks,
+                                    resultType,
+                                    qualitativeValue,
+                                    unitId: currentParameter?.default_unit_id || null,
+                                    loqValue: loqOverride ? parseFloat(loqOverride) : loqDefault,
+                                    lodValue: lodOverride ? parseFloat(lodOverride) : lodDefault,
+                                    limitMin: rule?.limit_min ?? null,
+                                    limitMax: rule?.limit_max ?? null,
+                                });
                             }}
                             disabled={uploadedFiles.length === 0 && !isND && !numericValue}
                             className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover shadow-lg shadow-primary/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed"

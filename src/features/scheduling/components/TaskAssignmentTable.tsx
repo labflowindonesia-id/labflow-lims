@@ -1,28 +1,93 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
-import { MOCK_TASKS, MOCK_USERS, MOCK_INSTRUMENTS, MOCK_WORK_ORDERS } from "@/data/mock-db";
-import { TestTask } from "@/types/master-data";
+import { useTestTasks, useUsers, useInstruments, useWorkOrders, useSamples, useParameters, useMethods } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 
 type TaskPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 
-interface ExtendedTask extends TestTask {
+// Interface compatible with Supabase task data + extended fields
+interface ExtendedTask {
+    id: string;
     priority: TaskPriority;
     dueDate: Date;
+    sample_id: string | null;
+    parameter_id: string | null;
+    method_id: string | null;
+    instrument_id: string | null;
+    assigned_to_id: string | null;
+    status: string;
+    due_date: string | null;
+    work_order_id?: string | null;
+    task_number: string;
 }
 
 export default function TaskAssignmentTable() {
+    const queryClient = useQueryClient();
+
+    // Supabase data
+    const { data: supabaseTasks = [] } = useTestTasks();
+    const { data: users = [] } = useUsers();
+    const { data: instruments = [] } = useInstruments();
+    const { data: workOrders = [] } = useWorkOrders();
+    const { data: samples = [] } = useSamples();
+    const { data: parameters = [] } = useParameters();
+    const { data: allMethods = [] } = useMethods();
+
+    // Fetch analysts to map analyst ID → user ID
+    const { data: analysts = [] } = useQuery<{ id: string; user_id: string }[]>({
+        queryKey: ["analysts", "all"],
+        queryFn: async () => {
+            const { data, error } = await supabase.from("analysts").select("id, user_id");
+            if (error) throw error;
+            return (data || []) as { id: string; user_id: string }[];
+        },
+    });
+
+    // Lookup helpers
+    const getSampleDisplay = (sampleUUID: string | null) => {
+        if (!sampleUUID) return { id: "—", name: "Unknown" };
+        const s = (samples || []).find(s => s.id === sampleUUID);
+        return { id: s?.sample_lab_id || sampleUUID.slice(0, 8), name: s?.sample_name || "" };
+    };
+    const getParameterName = (id: string | null) => {
+        if (!id) return "Unknown";
+        return (parameters || []).find(p => p.id === id)?.name || id.slice(0, 8);
+    };
+    const getMethodName = (id: string | null) => {
+        if (!id) return "";
+        const m = (allMethods || []).find(m => m.id === id);
+        return m?.code || m?.name || "";
+    };
+
     // Add priority and due date to tasks
-    const [tasks, setTasks] = useState<ExtendedTask[]>(() =>
-        MOCK_TASKS.map(t => ({
-            ...t,
-            priority: "NORMAL" as TaskPriority,
-            dueDate: new Date(t.due_date)
-        }))
-    );
+    const [tasks, setTasks] = useState<ExtendedTask[]>([]);
+
+    // Update tasks when supabaseTasks changes
+    useEffect(() => {
+        if (supabaseTasks && supabaseTasks.length > 0) {
+            setTasks(supabaseTasks
+                .filter(t => t.status !== "CANCELLED" && t.status !== "COMPLETED")
+                .map(t => ({
+                    id: t.id,
+                    sample_id: t.sample_id,
+                    parameter_id: t.parameter_id,
+                    method_id: t.method_id,
+                    instrument_id: t.instrument_id,
+                    assigned_to_id: t.assigned_to_id,
+                    status: t.status,
+                    due_date: t.due_date,
+                    work_order_id: t.work_plan_id,
+                    task_number: t.task_number,
+                    priority: (t.priority as TaskPriority) || "NORMAL",
+                    dueDate: new Date(t.due_date || new Date().toISOString())
+                })));
+        }
+    }, [supabaseTasks]);
 
     // Filters
     const [filterInstrument, setFilterInstrument] = useState<string>("");
@@ -31,30 +96,20 @@ export default function TaskAssignmentTable() {
     const [filterWorkOrder, setFilterWorkOrder] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
 
-    // Bulk assignment
+    // Selection for delete
     const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
-    const [bulkAnalyst, setBulkAnalyst] = useState("");
-    const [showBulkPanel, setShowBulkPanel] = useState(false);
 
-    // Only show analysts
-    const analysts = MOCK_USERS.filter(u => u.role === "ANALYST");
+    // Delete confirmation
+    const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ids: string[]; type: "single" | "batch" }>({ show: false, ids: [], type: "single" });
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    const handleAssign = (taskId: string, userId: string) => {
-        setTasks(prev => prev.map(t =>
-            t.id === taskId ? { ...t, assigned_to_user_id: userId, status: userId ? "ASSIGNED" : "PLANNED" } as ExtendedTask : t
-        ));
-    };
-
-    const handlePriorityChange = (taskId: string, priority: TaskPriority) => {
-        setTasks(prev => prev.map(t =>
-            t.id === taskId ? { ...t, priority } : t
-        ));
-    };
-
-    const handleDueDateChange = (taskId: string, date: string) => {
-        setTasks(prev => prev.map(t =>
-            t.id === taskId ? { ...t, dueDate: new Date(date) } : t
-        ));
+    // Analyst lookup: assigned_to_id (analyst.id) → analyst.user_id → user.full_name
+    const getAnalystName = (analystId: string | null) => {
+        if (!analystId) return null;
+        const analyst = analysts.find(a => a.id === analystId);
+        if (!analyst) return analystId.slice(0, 8);
+        const user = (users || []).find(u => u.id === analyst.user_id);
+        return user?.full_name || analystId.slice(0, 8);
     };
 
     const handleSelectTask = (taskId: string) => {
@@ -77,72 +132,36 @@ export default function TaskAssignmentTable() {
         }
     };
 
-    const handleBulkAssign = () => {
-        if (!bulkAnalyst || selectedTasks.size === 0) return;
-        setTasks(prev => prev.map(t =>
-            selectedTasks.has(t.id)
-                ? { ...t, assigned_to_user_id: bulkAnalyst, status: "ASSIGNED" }
-                : t
-        ));
-        setSelectedTasks(new Set());
-        setBulkAnalyst("");
-        setShowBulkPanel(false);
+    const handleDeleteTasks = async (taskIds: string[]) => {
+        if (taskIds.length === 0) return;
+        setIsDeleting(true);
+        try {
+            const { error } = await (supabase as any)
+                .from("test_tasks")
+                .update({ status: "CANCELLED" })
+                .in("id", taskIds);
+            if (error) throw error;
+
+            setTasks(prev => prev.filter(t => !taskIds.includes(t.id)));
+            setSelectedTasks(prev => {
+                const newSet = new Set(prev);
+                taskIds.forEach(id => newSet.delete(id));
+                return newSet;
+            });
+            queryClient.invalidateQueries({ queryKey: ["testTasks"] });
+        } catch (err: any) {
+            console.error("Failed to delete tasks:", err?.message || err);
+        } finally {
+            setIsDeleting(false);
+            setDeleteConfirm({ show: false, ids: [], type: "single" });
+        }
     };
 
-    // Get analyst skills (mock - in real app would come from DB)
-    const getAnalystSkills = (userId: string): string[] => {
-        const skills: Record<string, string[]> = {
-            "user-003": ["HPLC", "GC-MS", "Spectrophotometry"],
-            "user-004": ["Titrimetry", "Gravimetry", "pH Measurement"],
-            "user-005": ["Microbiology", "BOD Analysis"],
-        };
-        return skills[userId] || [];
+    const openDeleteConfirm = (ids: string[], type: "single" | "batch") => {
+        setDeleteConfirm({ show: true, ids, type });
     };
 
-    // Check if analyst is qualified for task
-    const isAnalystQualified = (userId: string, task: ExtendedTask): boolean => {
-        const skills = getAnalystSkills(userId);
-        // Simple mock check - in real app would check instrument/method qualifications
-        return skills.length > 0; // All analysts with skills are "qualified"
-    };
 
-    // Check for instrument conflicts (same instrument, same day, different task)
-    const getInstrumentConflicts = (instrumentId: string | undefined, taskId: string, dueDate: Date): string[] => {
-        if (!instrumentId) return [];
-        const sameDayTasks = tasks.filter(t =>
-            t.id !== taskId &&
-            t.instrument_id_snapshot === instrumentId &&
-            t.status !== "COMPLETED" &&
-            t.dueDate.toDateString() === dueDate.toDateString()
-        );
-        return sameDayTasks.map(t => t.sample_name_snapshot || "Unknown Sample");
-    };
-
-    // Check for analyst conflicts (same analyst, same day, multiple tasks)
-    const getAnalystConflicts = (analystId: string | undefined, taskId: string, dueDate: Date): number => {
-        if (!analystId) return 0;
-        const sameDayTasks = tasks.filter(t =>
-            t.id !== taskId &&
-            t.assigned_to_user_id === analystId &&
-            t.status !== "COMPLETED" &&
-            t.dueDate.toDateString() === dueDate.toDateString()
-        );
-        return sameDayTasks.length;
-    };
-
-    // Get workload for an analyst on a given day
-    const getAnalystWorkload = (analystId: string, date: Date): { count: number; overloaded: boolean } => {
-        const dailyTasks = tasks.filter(t =>
-            t.assigned_to_user_id === analystId &&
-            t.dueDate.toDateString() === date.toDateString()
-        );
-        return { count: dailyTasks.length, overloaded: dailyTasks.length >= 5 };
-    };
-
-    // Filter work orders that are RECEIVED or IN_PROGRESS only (as per blueprint)
-    const confirmedWorkOrders = MOCK_WORK_ORDERS.filter(wo =>
-        wo.status === "RECEIVED" || wo.status === "IN_PROGRESS"
-    );
 
     const filteredTasks = useMemo(() => {
         let result = [...tasks];
@@ -151,14 +170,14 @@ export default function TaskAssignmentTable() {
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(t =>
-                t.sample_name_snapshot?.toLowerCase().includes(q) ||
-                t.parameter_name_snapshot?.toLowerCase().includes(q)
+                t.sample_id?.toLowerCase().includes(q) ||
+                t.parameter_id?.toLowerCase().includes(q)
             );
         }
 
         // Instrument filter
         if (filterInstrument) {
-            result = result.filter(t => t.instrument_id_snapshot === filterInstrument);
+            result = result.filter(t => t.instrument_id === filterInstrument);
         }
 
         // Status filter
@@ -188,32 +207,22 @@ export default function TaskAssignmentTable() {
 
     return (
         <div className="space-y-4">
-            {/* Bulk Assignment Panel */}
+            {/* Bulk Action Panel */}
             {selectedTasks.size > 0 && (
-                <div className="rounded-lg bg-primary/10 border border-primary/30 p-4 flex items-center justify-between">
+                <div className="rounded-lg bg-danger/10 border border-danger/30 p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-primary">check_box</span>
+                        <span className="material-symbols-outlined text-danger">check_box</span>
                         <span className="text-sm font-medium text-text-main dark:text-white">
                             {selectedTasks.size} task(s) selected
                         </span>
                     </div>
                     <div className="flex items-center gap-3">
-                        <select
-                            className="text-sm border border-primary/30 rounded-md p-2 bg-white dark:bg-surface-dark"
-                            value={bulkAnalyst}
-                            onChange={(e) => setBulkAnalyst(e.target.value)}
-                        >
-                            <option value="">Select Analyst...</option>
-                            {analysts.map(a => (
-                                <option key={a.id} value={a.id}>{a.full_name}</option>
-                            ))}
-                        </select>
                         <button
-                            onClick={handleBulkAssign}
-                            disabled={!bulkAnalyst}
-                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+                            onClick={() => openDeleteConfirm(Array.from(selectedTasks), "batch")}
+                            className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/80 flex items-center gap-1.5"
                         >
-                            Assign Selected
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            Delete Selected
                         </button>
                         <button
                             onClick={() => setSelectedTasks(new Set())}
@@ -227,7 +236,7 @@ export default function TaskAssignmentTable() {
 
             <PremiumCard
                 title="Pending Assignments"
-                subtitle="Assign requested tests to qualified analysts"
+                subtitle="Overview of generated test tasks and their assignments"
                 action={
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-text-secondary">
@@ -282,7 +291,7 @@ export default function TaskAssignmentTable() {
                         onChange={(e) => setFilterInstrument(e.target.value)}
                     >
                         <option value="">All Instruments</option>
-                        {MOCK_INSTRUMENTS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        {(instruments || []).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                     </select>
 
                     {/* Work Order Filter */}
@@ -292,9 +301,9 @@ export default function TaskAssignmentTable() {
                         onChange={(e) => setFilterWorkOrder(e.target.value)}
                     >
                         <option value="">All Work Orders</option>
-                        {MOCK_WORK_ORDERS.map(wo => (
+                        {(workOrders || []).map(wo => (
                             <option key={wo.id} value={wo.id}>
-                                {wo.work_order_no} - {wo.customer_name_snapshot.slice(0, 20)}
+                                {wo.work_order_number} - {(wo.customer_name_snapshot || "").slice(0, 20)}
                             </option>
                         ))}
                     </select>
@@ -319,6 +328,7 @@ export default function TaskAssignmentTable() {
                                 <th className="px-3 py-2 text-center">Due Date</th>
                                 <th className="px-3 py-2 text-left">Analyst</th>
                                 <th className="px-3 py-2 text-center">Status</th>
+                                <th className="px-3 py-2 text-center w-10"></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-light dark:divide-border-dark">
@@ -333,87 +343,34 @@ export default function TaskAssignmentTable() {
                                         />
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className="font-medium text-text-main dark:text-white">{task.sample_name_snapshot}</span>
-                                        <span className="block text-xs text-text-secondary">{task.matrix_name_snapshot}</span>
+                                        <span className="font-medium text-text-main dark:text-white">{getSampleDisplay(task.sample_id).id}</span>
+                                        <span className="block text-xs text-text-secondary">{getSampleDisplay(task.sample_id).name}</span>
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className="font-semibold text-text-main dark:text-white">{task.parameter_name_snapshot}</span>
-                                        <span className="block text-xs text-text-secondary italic">{task.method_id_snapshot}</span>
+                                        <span className="font-semibold text-text-main dark:text-white">{getParameterName(task.parameter_id)}</span>
+                                        <span className="block text-xs text-text-secondary italic">{getMethodName(task.method_id)}</span>
                                     </td>
                                     <td className="px-3 py-3 text-center">
-                                        <select
-                                            className={cn(
-                                                "text-xs rounded-full px-2 py-1 font-bold border-0 cursor-pointer",
-                                                priorityColors[task.priority]
-                                            )}
-                                            value={task.priority}
-                                            onChange={(e) => handlePriorityChange(task.id, e.target.value as TaskPriority)}
-                                        >
-                                            <option value="LOW">Low</option>
-                                            <option value="NORMAL">Normal</option>
-                                            <option value="HIGH">High</option>
-                                            <option value="URGENT">Urgent</option>
-                                        </select>
+                                        <span className={cn(
+                                            "text-xs rounded-full px-2.5 py-1 font-bold",
+                                            priorityColors[task.priority]
+                                        )}>
+                                            {task.priority}
+                                        </span>
                                     </td>
                                     <td className="px-3 py-3 text-center">
-                                        <input
-                                            type="date"
-                                            className="text-xs border border-border-light rounded px-2 py-1 bg-white dark:bg-surface-dark dark:border-border-dark"
-                                            value={task.dueDate.toISOString().split('T')[0]}
-                                            onChange={(e) => handleDueDateChange(task.id, e.target.value)}
-                                        />
+                                        <span className="text-xs text-text-main dark:text-white">
+                                            {task.dueDate.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                                        </span>
                                     </td>
                                     <td className="px-3 py-3">
-                                        <select
-                                            className={cn(
-                                                "w-full text-xs rounded border p-1.5 bg-transparent",
-                                                task.assigned_to_user_id ? "border-primary/50 bg-primary/5 text-primary font-medium" : "border-border-light text-text-secondary"
-                                            )}
-                                            value={task.assigned_to_user_id || ""}
-                                            onChange={(e) => handleAssign(task.id, e.target.value)}
-                                        >
-                                            <option value="">Select Analyst...</option>
-                                            {analysts.map(a => (
-                                                <option key={a.id} value={a.id}>
-                                                    {a.full_name} {isAnalystQualified(a.id, task) ? "✓" : ""}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {/* Conflict Warnings */}
-                                        {(() => {
-                                            const instrumentConflicts = getInstrumentConflicts(task.instrument_id_snapshot, task.id, task.dueDate);
-                                            const analystConflicts = getAnalystConflicts(task.assigned_to_user_id, task.id, task.dueDate);
-                                            const hasConflicts = instrumentConflicts.length > 0 || analystConflicts > 0;
-
-                                            return (
-                                                <div className="mt-1 space-y-0.5">
-                                                    {task.assigned_to_user_id && !hasConflicts && (
-                                                        <span className="text-[10px] text-success flex items-center gap-1">
-                                                            <span className="material-symbols-outlined text-[12px]">verified</span>
-                                                            Qualified
-                                                        </span>
-                                                    )}
-                                                    {instrumentConflicts.length > 0 && (
-                                                        <span className="text-[10px] text-warning flex items-center gap-1" title={`Instrument conflict with: ${instrumentConflicts.join(", ")}`}>
-                                                            <span className="material-symbols-outlined text-[12px]">warning</span>
-                                                            Instr. busy ({instrumentConflicts.length})
-                                                        </span>
-                                                    )}
-                                                    {analystConflicts > 3 && (
-                                                        <span className="text-[10px] text-danger flex items-center gap-1" title={`Analyst has ${analystConflicts} other tasks on this day`}>
-                                                            <span className="material-symbols-outlined text-[12px]">error</span>
-                                                            Overloaded ({analystConflicts + 1} tasks)
-                                                        </span>
-                                                    )}
-                                                    {analystConflicts > 0 && analystConflicts <= 3 && (
-                                                        <span className="text-[10px] text-blue-500 flex items-center gap-1">
-                                                            <span className="material-symbols-outlined text-[12px]">info</span>
-                                                            +{analystConflicts} same day
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
+                                        {task.assigned_to_id ? (
+                                            <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-md">
+                                                {getAnalystName(task.assigned_to_id)}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs text-text-secondary italic">Unassigned</span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-3 text-center">
                                         <span className={cn(
@@ -424,6 +381,15 @@ export default function TaskAssignmentTable() {
                                         )}>
                                             {task.status.replace(/_/g, " ")}
                                         </span>
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                        <button
+                                            onClick={() => openDeleteConfirm([task.id], "single")}
+                                            className="p-1 rounded-md text-text-secondary hover:text-danger hover:bg-danger/10 transition-colors"
+                                            title="Delete task"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -439,6 +405,56 @@ export default function TaskAssignmentTable() {
                     </div>
                 )}
             </PremiumCard>
+
+            {/* Delete Confirmation Dialog */}
+            {deleteConfirm.show && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 border border-border-light dark:border-border-dark">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-full bg-danger/10">
+                                <span className="material-symbols-outlined text-danger text-[24px]">warning</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-text-main dark:text-white">Delete Task{deleteConfirm.ids.length > 1 ? "s" : ""}?</h3>
+                                <p className="text-sm text-text-secondary">
+                                    {deleteConfirm.ids.length === 1
+                                        ? "This task will be permanently deleted."
+                                        : `${deleteConfirm.ids.length} tasks will be permanently deleted.`}
+                                </p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-text-secondary mb-6">
+                            This action cannot be undone. All related assignments will be removed.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setDeleteConfirm({ show: false, ids: [], type: "single" })}
+                                disabled={isDeleting}
+                                className="px-4 py-2 text-sm font-medium rounded-lg border border-border-light text-text-main hover:bg-background-light dark:text-white dark:border-border-dark dark:hover:bg-black/20 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleDeleteTasks(deleteConfirm.ids)}
+                                disabled={isDeleting}
+                                className="px-4 py-2 text-sm font-medium rounded-lg bg-danger text-white hover:bg-danger/80 disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                        Deleting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                                        Delete{deleteConfirm.ids.length > 1 ? ` ${deleteConfirm.ids.length} Tasks` : ""}
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

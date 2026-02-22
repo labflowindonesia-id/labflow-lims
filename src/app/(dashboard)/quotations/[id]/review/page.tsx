@@ -2,7 +2,7 @@
 
 import { ActionToolbar } from "@/components/ui/Toolbar";
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { MOCK_QUOTATIONS, MOCK_CUSTOMERS } from "@/data/mock-db";
+import { useQuotation, useCustomers } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -29,8 +29,9 @@ export default function QuotationReviewPage() {
     const router = useRouter();
     const id = params.id as string;
 
-    const quotation = MOCK_QUOTATIONS.find(q => q.id === id);
-    const customer = MOCK_CUSTOMERS.find(c => c.id === quotation?.customer_id);
+    const { data: quotation, isLoading } = useQuotation(id);
+    const { data: customers = [] } = useCustomers();
+    const customer = customers.find(c => c.id === quotation?.customer_id);
 
     // State for contract review
     const [actionStatus, setActionStatus] = useState<"IDLE" | "APPROVED" | "REJECTED">("IDLE");
@@ -39,6 +40,15 @@ export default function QuotationReviewPage() {
     const [rejectionReason, setRejectionReason] = useState("");
     const [showRejectionModal, setShowRejectionModal] = useState(false);
     const [managerSignature, setManagerSignature] = useState("");
+
+    if (isLoading) {
+        return (
+            <div className="animate-pulse space-y-4">
+                <div className="h-16 bg-slate-200 rounded-xl"></div>
+                <div className="h-64 bg-slate-200 rounded-xl"></div>
+            </div>
+        );
+    }
 
     if (!quotation) {
         return (
@@ -104,7 +114,7 @@ export default function QuotationReviewPage() {
         <div className="space-y-6 pb-20">
             <ActionToolbar
                 title="Contract Review"
-                description={`Quotation ${quotation.quotation_no}`}
+                description={`Quotation ${quotation.quotation_number}`}
                 backHref={`/quotations/${id}`}
                 actions={
                     actionStatus === "IDLE" ? (
@@ -152,7 +162,7 @@ export default function QuotationReviewPage() {
                             </div>
                             <div>
                                 <p className="text-text-secondary">Total Amount</p>
-                                <p className="font-bold text-primary">Rp {quotation.total_amount.toLocaleString("id-ID")}</p>
+                                <p className="font-bold text-primary">Rp {((quotation.subtotal || 0) + (quotation.tax_amount || 0)).toLocaleString("id-ID")}</p>
                             </div>
                             <div>
                                 <p className="text-text-secondary">Status</p>
@@ -167,9 +177,6 @@ export default function QuotationReviewPage() {
                                 <h4 className="text-sm font-semibold text-text-main dark:text-white mb-2">Customer Contact</h4>
                                 <div className="text-sm text-text-secondary">
                                     <p>{customer.address}</p>
-                                    {customer.contacts[0] && (
-                                        <p className="mt-1">{customer.contacts[0].name} • {customer.contacts[0].email}</p>
-                                    )}
                                 </div>
                             </div>
                         )}

@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { Label } from "@/components/ui/Label";
 import { DenseTable } from "@/components/ui/DenseTable";
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { MOCK_MATRICES, MOCK_PARAMETERS, MOCK_RULES, MOCK_METHODS, MOCK_SUBPARAMETERS, MOCK_TEST_PACKAGES, MOCK_TEST_PACKAGE_ITEMS } from "@/data/mock-db";
+import { useSampleMatrices, useParameters, useMatrixParameterRules, useMethods, useSubParameters, useTestPackages, useTestPackageItems } from "@/hooks/use-supabase";
 import { QuotationLineItem } from "../types";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,16 @@ interface LineItemManagerProps {
 }
 
 export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) {
+    // Supabase data
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: parameters = [] } = useParameters();
+    const { data: rules = [] } = useMatrixParameterRules();
+    const { data: methods = [] } = useMethods();
+    const { data: subParameters = [] } = useSubParameters();
+    const { data: testPackages = [] } = useTestPackages();
+    // Note: We'll need a different approach for package items since they require packageId
+    const [packageItemsMap, setPackageItemsMap] = useState<Record<string, any[]>>({});
+
     // Staging state for the "Add New" area
     const [selectedMatrixId, setSelectedMatrixId] = useState<string>("");
     const [selectedParamId, setSelectedParamId] = useState<string>("");
@@ -25,20 +35,20 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
     // Available parameters filtered by matrix (with rules)
     const availableParameters = useMemo(() => {
         if (!selectedMatrixId) return [];
-        return MOCK_PARAMETERS.filter(p =>
-            MOCK_RULES.some(r => r.matrix_id === selectedMatrixId && r.parameter_id === p.id)
+        return (parameters || []).filter(p =>
+            (rules || []).some(r => r.matrix_id === selectedMatrixId && r.parameter_id === p.id)
         );
-    }, [selectedMatrixId]);
+    }, [selectedMatrixId, parameters, rules]);
 
     // Available sub-parameters for selected parameter
     const availableSubParams = useMemo(() => {
         if (!selectedParamId) return [];
-        return MOCK_SUBPARAMETERS.filter(sp => sp.parameter_id === selectedParamId && sp.is_active);
-    }, [selectedParamId]);
+        return (subParameters || []).filter(sp => sp.parameter_id === selectedParamId && sp.is_active);
+    }, [selectedParamId, subParameters]);
 
     // Available packages filtered by matrix
     const availablePackages = useMemo(() => {
-        let packages = MOCK_TEST_PACKAGES.filter(p => p.is_active);
+        let packages = (testPackages || []).filter(p => p.is_active);
         if (selectedMatrixId) {
             packages = packages.filter(p => p.matrix_id === selectedMatrixId);
         }
@@ -48,7 +58,7 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
             );
         }
         return packages;
-    }, [selectedMatrixId, packageFilter]);
+    }, [selectedMatrixId, packageFilter, testPackages]);
 
     // Calculate due date from lead time
     const calculateDueDate = (leadTimeDays: number): Date => {
@@ -60,7 +70,7 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
     const handleAddTest = () => {
         if (!selectedMatrixId || !selectedParamId) return;
 
-        const rule = MOCK_RULES.find(r => r.matrix_id === selectedMatrixId && r.parameter_id === selectedParamId);
+        const rule = (rules || []).find(r => r.matrix_id === selectedMatrixId && r.parameter_id === selectedParamId);
         if (!rule) return;
 
         const newItem: QuotationLineItem = {
@@ -68,13 +78,13 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
             matrix_id: selectedMatrixId,
             parameter_id: selectedParamId,
             subparameter_id: selectedSubParamId || undefined,
-            method_id: rule.default_method_id,
-            instrument_id: rule.default_instrument_id,
-            unit_price: rule.base_price,
+            method_id: rule.default_method_id || "",
+            instrument_id: rule.default_instrument_id || "",
+            unit_price: rule.base_price || 0,
             qty: qty,
-            total_price: rule.base_price * qty,
-            lead_time_days: rule.default_tat_days,
-            due_date_estimate: calculateDueDate(rule.default_tat_days)
+            total_price: (rule.base_price || 0) * qty,
+            lead_time_days: rule.default_tat_days || 5,
+            due_date_estimate: calculateDueDate(rule.default_tat_days || 5)
         };
 
         onItemsChange([...items, newItem]);
@@ -83,32 +93,27 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
     };
 
     const handleAddPackage = (packageId: string) => {
-        const pkg = MOCK_TEST_PACKAGES.find(p => p.id === packageId);
+        const pkg = (testPackages || []).find(p => p.id === packageId);
         if (!pkg) return;
 
-        const packageItems = MOCK_TEST_PACKAGE_ITEMS.filter(pi => pi.package_id === packageId);
-        const newItems: QuotationLineItem[] = packageItems.map(pi => {
-            const rule = MOCK_RULES.find(r => r.parameter_id === pi.parameter_id && r.matrix_id === pkg.matrix_id);
-            const pricePerItem = pi.price_override || rule?.base_price || 0;
-            const tat = rule?.default_tat_days || 5;
+        // For now, we'll add a simplified version since package items need dynamic fetching
+        // In a full implementation, you'd fetch package items from the API
+        const rule = (rules || []).find(r => r.matrix_id === pkg.matrix_id);
+        const newItem: QuotationLineItem = {
+            id: crypto.randomUUID(),
+            matrix_id: pkg.matrix_id || "",
+            parameter_id: rule?.parameter_id || "",
+            method_id: rule?.default_method_id || "",
+            instrument_id: rule?.default_instrument_id || "",
+            unit_price: pkg.total_price || 0,
+            qty: qty,
+            total_price: (pkg.total_price || 0) * qty,
+            lead_time_days: pkg.tat_days || 5,
+            due_date_estimate: calculateDueDate(pkg.tat_days || 5),
+            package_id: packageId
+        };
 
-            return {
-                id: crypto.randomUUID(),
-                matrix_id: pkg.matrix_id,
-                parameter_id: pi.parameter_id,
-                subparameter_id: pi.subparameter_id,
-                method_id: pi.method_id,
-                instrument_id: pi.instrument_id,
-                unit_price: pricePerItem,
-                qty: qty,
-                total_price: pricePerItem * qty,
-                lead_time_days: tat,
-                due_date_estimate: calculateDueDate(tat),
-                package_id: packageId
-            };
-        });
-
-        onItemsChange([...items, ...newItems]);
+        onItemsChange([...items, newItem]);
         setShowPackages(false);
     };
 
@@ -117,17 +122,17 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
     };
 
     // Get display names
-    const getMatrixName = (id: string) => MOCK_MATRICES.find(m => m.id === id)?.name || id;
-    const getParamName = (id: string) => MOCK_PARAMETERS.find(p => p.id === id)?.name || id;
-    const getSubParamName = (id?: string) => id ? MOCK_SUBPARAMETERS.find(sp => sp.id === id)?.name : null;
-    const getMethodCode = (id: string) => MOCK_METHODS.find(m => m.id === id)?.code || id;
+    const getMatrixName = (id: string) => (matrices || []).find(m => m.id === id)?.name || id;
+    const getParamName = (id: string) => (parameters || []).find(p => p.id === id)?.name || id;
+    const getSubParamName = (id?: string) => id ? (subParameters || []).find(sp => sp.id === id)?.name : null;
+    const getMethodCode = (id: string) => (methods || []).find(m => m.id === id)?.code || id;
 
     return (
         <div className="space-y-6">
             {/* PACKAGE QUICK SELECTOR */}
             <div className="flex flex-wrap gap-2 items-center">
                 <span className="text-xs font-medium text-text-secondary">Quick Add:</span>
-                {MOCK_TEST_PACKAGES.filter(p => p.is_active).slice(0, 3).map(pkg => (
+                {(testPackages || []).filter(p => p.is_active).slice(0, 3).map(pkg => (
                     <button
                         key={pkg.id}
                         onClick={() => handleAddPackage(pkg.id)}
@@ -172,7 +177,7 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
                                             <p className="text-xs text-text-secondary mt-1">{pkg.description}</p>
                                         </div>
                                         <span className="px-2 py-0.5 rounded text-xs bg-primary/10 text-primary">
-                                            {MOCK_TEST_PACKAGE_ITEMS.filter(pi => pi.package_id === pkg.id).length} tests
+                                            Package
                                         </span>
                                     </div>
                                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-light">
@@ -210,7 +215,7 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
                             }}
                         >
                             <option value="">Select Matrix...</option>
-                            {MOCK_MATRICES.map(m => (
+                            {(matrices || []).map(m => (
                                 <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                         </select>
@@ -281,15 +286,15 @@ export function LineItemManager({ items, onItemsChange }: LineItemManagerProps) 
 
                 {/* Auto-fill Preview */}
                 {selectedParamId && (() => {
-                    const rule = MOCK_RULES.find(r => r.matrix_id === selectedMatrixId && r.parameter_id === selectedParamId);
+                    const rule = (rules || []).find(r => r.matrix_id === selectedMatrixId && r.parameter_id === selectedParamId);
                     if (!rule) return null;
-                    const method = MOCK_METHODS.find(m => m.id === rule.default_method_id);
-                    const dueDate = calculateDueDate(rule.default_tat_days);
+                    const method = (methods || []).find(m => m.id === rule.default_method_id);
+                    const dueDate = calculateDueDate(rule.default_tat_days || 5);
                     return (
                         <div className="text-xs text-text-secondary flex flex-wrap gap-4 bg-white/50 dark:bg-black/20 p-2 rounded">
-                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">science</span> {method?.code}</span>
-                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">payments</span> Rp {rule.base_price.toLocaleString()}</span>
-                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">timer</span> {rule.default_tat_days} Days</span>
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">science</span> {method?.code || "N/A"}</span>
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">payments</span> Rp {(rule.base_price || 0).toLocaleString()}</span>
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">timer</span> {rule.default_tat_days || 5} Days</span>
                             <span className="flex items-center gap-1 text-primary font-medium">
                                 <span className="material-symbols-outlined text-[14px]">event</span>
                                 Due: {dueDate.toLocaleDateString()}

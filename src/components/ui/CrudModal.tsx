@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, ReactNode } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface FieldConfig {
     name: string;
     label: string;
-    type: "text" | "email" | "tel" | "number" | "select" | "textarea" | "checkbox";
+    type: "text" | "email" | "tel" | "number" | "select" | "textarea" | "checkbox" | "date";
     required?: boolean;
     placeholder?: string;
     options?: { value: string; label: string }[];
@@ -34,14 +34,26 @@ export function CrudModal({
     onSave,
     entityName = "item"
 }: CrudModalProps) {
-    const [formData, setFormData] = useState<Record<string, any>>(initialData);
+    const [formData, setFormData] = useState<Record<string, any>>({});
+
+    // Reset form data whenever the modal opens or initialData changes
+    useEffect(() => {
+        if (isOpen) {
+            setFormData(initialData || {});
+        }
+    }, [isOpen, initialData]);
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(formData);
-        onClose();
+        try {
+            await onSave(formData);
+            onClose();
+        } catch (err: any) {
+            alert(err.message || String(err));
+            console.error(err);
+        }
     };
 
     const handleFieldChange = (name: string, value: any) => {
@@ -73,9 +85,14 @@ export function CrudModal({
                             Cancel
                         </button>
                         <button
-                            onClick={() => {
-                                onSave({ delete: true, id: initialData.id });
-                                onClose();
+                            onClick={async () => {
+                                try {
+                                    await onSave({ delete: true, id: initialData.id });
+                                    onClose();
+                                } catch (err: any) {
+                                    alert(err.message || String(err));
+                                    console.error(err);
+                                }
                             }}
                             className="px-4 py-2 text-sm font-medium text-white bg-danger hover:bg-danger/90 rounded-lg"
                         >
@@ -150,6 +167,14 @@ export function CrudModal({
                                     />
                                     <span className="text-sm text-text-secondary">{field.placeholder || "Enable"}</span>
                                 </label>
+                            ) : field.type === "date" ? (
+                                <input
+                                    type="date"
+                                    className="w-full text-sm rounded-lg border border-border-light p-3 bg-white dark:bg-white/5 dark:border-white/10 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                                    required={field.required}
+                                    value={formData[field.name] || ""}
+                                    onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                                />
                             ) : (
                                 <input
                                     type={field.type}

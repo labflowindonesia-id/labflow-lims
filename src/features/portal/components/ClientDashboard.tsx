@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
-import { MOCK_WORK_ORDERS, MOCK_TASKS } from "@/data/mock-db";
+import { useWorkOrders, useTestTasks } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
 
 type OrderStatus = "DRAFT" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED";
@@ -17,6 +17,9 @@ interface SampleProgress {
 }
 
 export default function ClientDashboard() {
+    const { data: allWorkOrders = [] } = useWorkOrders();
+    const { data: allTasks = [] } = useTestTasks();
+
     const [searchQuery, setSearchQuery] = useState("");
     const [searchType, setSearchType] = useState<"all" | "report" | "sample" | "date">("all");
     const [dateFrom, setDateFrom] = useState("");
@@ -67,9 +70,9 @@ export default function ClientDashboard() {
         return sampleMap[orderId] || [`Sample ${orderId}`];
     };
 
-    // Filter for logged in customer (Mock: cust-001)
+    // Filter for logged in customer (Mock: cust-001) 
     const myOrders = useMemo(() => {
-        let orders = MOCK_WORK_ORDERS.filter(w => w.customer_id === "cust-001");
+        let orders = (allWorkOrders || []).filter(w => w.customer_id === "cust-001");
 
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
@@ -86,7 +89,7 @@ export default function ClientDashboard() {
                         const report = getReportNumber(w.id);
                         const sampleNames = getSampleNames(w.id);
                         return (
-                            w.work_order_no.toLowerCase().includes(q) ||
+                            w.work_order_number.toLowerCase().includes(q) ||
                             w.id.toLowerCase().includes(q) ||
                             (report && report.toLowerCase().includes(q)) ||
                             sampleNames.some(s => s.toLowerCase().includes(q))
@@ -97,12 +100,12 @@ export default function ClientDashboard() {
 
         if (dateFrom) {
             const from = new Date(dateFrom);
-            orders = orders.filter(w => w.received_date >= from);
+            orders = orders.filter(w => w.received_date && new Date(w.received_date) >= from);
         }
 
         if (dateTo) {
             const to = new Date(dateTo);
-            orders = orders.filter(w => w.received_date <= to);
+            orders = orders.filter(w => w.received_date && new Date(w.received_date) <= to);
         }
 
         // Matrix filter
@@ -111,12 +114,12 @@ export default function ClientDashboard() {
         }
 
         return orders;
-    }, [searchQuery, searchType, dateFrom, dateTo, matrixFilter]);
+    }, [allWorkOrders, searchQuery, searchType, dateFrom, dateTo, matrixFilter]);
 
     // Get samples for selected order (mock generated)
     const orderSamples = useMemo((): SampleProgress[] => {
         if (!selectedOrder) return [];
-        const order = MOCK_WORK_ORDERS.find(w => w.id === selectedOrder);
+        const order = (allWorkOrders || []).find(w => w.id === selectedOrder);
         if (!order) return [];
 
         // Generate mock samples based on order's sample_count
@@ -124,7 +127,7 @@ export default function ClientDashboard() {
         const sampleCount = order.sample_count || 3;
 
         for (let i = 0; i < sampleCount; i++) {
-            const tasks = MOCK_TASKS.filter(t => t.work_order_id === selectedOrder);
+            const tasks = (allTasks || []).filter(t => t.work_plan_id === selectedOrder);
             const completed = Math.floor(Math.random() * 5);
             const total = 5;
             let status: SampleProgress["status"] = "received";
@@ -159,7 +162,7 @@ export default function ClientDashboard() {
 
     const stats = {
         active: myOrders.filter(w => w.status !== "COMPLETED").length,
-        completed: myOrders.filter(w => w.status === "COMPLETED").length,
+        completed: myOrders.filter(w => w.status === "IN_REVIEW").length,
         totalSpent: "12.5M"
     };
 
@@ -303,14 +306,14 @@ export default function ClientDashboard() {
                         },
                         {
                             header: "Order ID",
-                            accessorKey: "work_order_no",
+                            accessorKey: "work_order_number",
                             className: "font-mono font-medium",
                             cell: w => (
                                 <div className="flex items-center gap-2">
                                     {selectedOrder === w.id && (
                                         <span className="w-2 h-2 rounded-full bg-primary" />
                                     )}
-                                    {w.work_order_no}
+                                    {w.work_order_number}
                                 </div>
                             )
                         },
@@ -329,14 +332,14 @@ export default function ClientDashboard() {
                         {
                             header: "Date Received",
                             accessorKey: "received_date",
-                            cell: w => w.received_date.toLocaleDateString()
+                            cell: w => w.received_date ? new Date(w.received_date).toLocaleDateString() : "N/A"
                         },
                         {
                             header: "Progress",
                             accessorKey: "status",
                             cell: (w) => {
-                                const stepIndex = w.status === "COMPLETED" ? 3 :
-                                    w.status === "IN_PROGRESS" ? 1 : 0;
+                                const stepIndex = w.status === "IN_REVIEW" ? 3 :
+                                    w.status === "IN_ANALYSIS" ? 1 : 0;
                                 return (
                                     <div className="flex items-center gap-1">
                                         {progressSteps.map((step, i) => (
@@ -372,7 +375,7 @@ export default function ClientDashboard() {
                             className: "text-right",
                             cell: (w) => (
                                 <div className="flex justify-end gap-2">
-                                    {w.status === "COMPLETED" ? (
+                                    {w.status === "IN_REVIEW" ? (
                                         <button className="flex items-center gap-1 rounded bg-green-600 px-3 py-1 text-xs font-bold text-white shadow hover:bg-green-700">
                                             <span className="material-symbols-outlined text-[14px]">download</span>
                                             CoA
@@ -401,7 +404,7 @@ export default function ClientDashboard() {
             {/* Order Detail Panel */}
             {selectedOrder && (
                 <PremiumCard
-                    title={`Order Details: ${MOCK_WORK_ORDERS.find(w => w.id === selectedOrder)?.work_order_no}`}
+                    title={`Order Details: ${(allWorkOrders || []).find(w => w.id === selectedOrder)?.work_order_number}`}
                     subtitle="Sample-level progress tracking"
                     action={
                         <button onClick={() => setSelectedOrder(null)} className="text-slate-400 hover:text-slate-600">

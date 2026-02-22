@@ -1,0 +1,85 @@
+﻿
+> temp-app@0.1.0 build
+> next build
+
+Γû▓ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 13.5s
+  Running TypeScript ...
+node.exe : Failed to 
+compile.
+At line:1 char:1
++ & "C:\Program Files
+\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Failed    
+ to compile.:Stri    
+ng) [], RemoteEx    
+ception
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+
+./src/app/(dashboard)
+/change-requests/page
+.tsx:140:20
+Type error: 
+'workOrders' is 
+possibly 'null'.
+
+[0m [90m 138 
+|[39m         
+[36mif[39m ([33m!
+[39mnewCR[33m.[39mw
+orkOrderId 
+[33m||[39m [33m![
+39mnewCR[33m.[39mde
+scription[33m.[39mt
+rim()) [36mreturn[3
+9m[33m;[39m
+ [90m 139 |[39m
+[31m[1m>[22m[39m
+[90m 140 |[39m      
+   [36mconst[39m 
+wo [33m=[39m workOr
+ders[33m.[39mfind(w
+ [33m=>[39m 
+w[33m.[39mid 
+[33m===[39m newCR[
+33m.[39mworkOrderId)
+[33m;[39m
+ [90m     |[39m    
+                
+[31m[1m^[22m[39m
+ [90m 141 |[39m    
+     [36mconst[39m 
+newRequest[33m:[39m
+ [33mChangeRequest[
+39m [33m=[39m {
+ [90m 142 |[39m    
+         
+id[33m:[39m [32m`c
+r-${Date.now()}`[39m
+[33m,[39m
+ [90m 143 |[39m    
+         
+crNumber[33m:[39m 
+[32m`CR-2024-${String
+(changeRequests.lengt
+h + 1).padStart(4, "0
+")}`[39m[33m,[39m
+[0m
+Next.js build worker 
+exited with code: 1 
+and signal: null

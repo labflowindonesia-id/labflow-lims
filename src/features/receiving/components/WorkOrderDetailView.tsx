@@ -1,5 +1,7 @@
+"use client";
+
 import { PremiumCard } from "@/components/ui/PremiumCard";
-import { MOCK_WORK_ORDERS } from "@/data/mock-db";
+import { useWorkOrder } from "@/hooks/use-supabase";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -8,8 +10,11 @@ interface WorkOrderDetailProps {
 }
 
 export default function WorkOrderDetailView({ id }: WorkOrderDetailProps) {
-    // In a real app, we would fetch Sample and Test info here too
-    const wo = MOCK_WORK_ORDERS.find(w => w.id === id);
+    const { data: wo, isLoading } = useWorkOrder(id);
+
+    if (isLoading) {
+        return <div className="animate-pulse space-y-6"><div className="h-48 bg-slate-200 rounded-xl"></div></div>;
+    }
 
     if (!wo) {
         return <div className="p-8 text-center text-red-500">Work Order not found</div>;
@@ -20,7 +25,7 @@ export default function WorkOrderDetailView({ id }: WorkOrderDetailProps) {
             {/* Main Content: Info & Sample List */}
             <div className="lg:col-span-2 space-y-6">
                 <PremiumCard
-                    title={`Work Order ${wo.work_order_no}`}
+                    title={`Work Order ${wo.work_order_number}`}
                     action={
                         <span className={cn(
                             "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
@@ -39,7 +44,7 @@ export default function WorkOrderDetailView({ id }: WorkOrderDetailProps) {
                         </div>
                         <div>
                             <p className="text-text-secondary">Received Date</p>
-                            <p className="font-medium text-text-main">{wo.received_date.toLocaleDateString()}</p>
+                            <p className="font-medium text-text-main">{new Date(wo.received_date).toLocaleDateString()}</p>
                         </div>
                         <div>
                             <p className="text-text-secondary">Related Quote</p>
@@ -64,7 +69,7 @@ export default function WorkOrderDetailView({ id }: WorkOrderDetailProps) {
                                             {i + 1}
                                         </div>
                                         <div>
-                                            <p className="text-sm font-medium text-text-main">Sample-{wo.work_order_no}-{i + 1}</p>
+                                            <p className="text-sm font-medium text-text-main">Sample-{wo.work_order_number}-{i + 1}</p>
                                             <p className="text-[10px] text-text-secondary">Water Waste • 500ml Glass Bottle</p>
                                         </div>
                                     </div>

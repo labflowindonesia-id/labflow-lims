@@ -3,20 +3,43 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminLoginPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simulate API call for admin auth
-        setTimeout(() => {
+        setError(null);
+
+        const formData = new FormData(e.currentTarget);
+        const email = formData.get("email") as string;
+        const password = formData.get("password") as string;
+
+        try {
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (authError) {
+                setError(authError.message);
+                setIsLoading(false);
+                return;
+            }
+
             router.push("/dashboard");
-        }, 1200);
+            router.refresh();
+        } catch {
+            setError("An unexpected error occurred. Please try again.");
+            setIsLoading(false);
+        }
     };
+
 
     return (
         <div className="flex min-h-screen w-full flex-col md:flex-row bg-background-light dark:bg-background-dark">
@@ -76,6 +99,15 @@ export default function AdminLoginPage() {
                             Please enter your credentials to access the dashboard.
                         </p>
                     </div>
+
+                    {error && (
+                        <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-red-600 dark:text-red-400 text-lg">error</span>
+                                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="mt-10">
                         <form onSubmit={handleLogin} className="space-y-6">

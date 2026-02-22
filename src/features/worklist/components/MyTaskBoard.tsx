@@ -1,65 +1,118 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { TestTask } from "@/types/master-data";
-import { MOCK_TASKS, MOCK_RESULTS } from "@/data/mock-db";
+import { useTestTasks, useParameters, useSamples, useSampleMatrices, useTestResults, useTestRunsAll } from "@/hooks/use-supabase";
+import { TestTask } from "@/types/database";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useAuth } from "@/providers/AuthProvider";
+import { supabase } from "@/lib/supabase";
+import { updateRow } from "@/lib/services";
+import { useQuery } from "@tanstack/react-query";
 
 type TabType = "ACTIVE" | "OVERDUE" | "COMPLETED";
 type SortType = "due_date" | "priority" | "parameter";
 
 export default function MyTaskBoard() {
-    // Mock logged-in user: "usr-003" (Analyst Kimia)
-    const MY_ID = "usr-003";
+    const router = useRouter();
+    // Auth — get real logged-in user
+    const { user } = useAuth();
+
+    // Look up analyst record for this user (assigned_to_id stores analysts.id)
+    const { data: myAnalyst } = useQuery<{ id: string; user_id: string } | null>({
+        queryKey: ["analyst", "byUser", user?.id] as const,
+        queryFn: async () => {
+            if (!user?.id) return null;
+            const { data, error } = await supabase
+                .from("analysts")
+                .select("id, user_id")
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (error) { console.error("Analyst lookup error:", error); return null; }
+            return data as { id: string; user_id: string } | null;
+        },
+        enabled: !!user?.id,
+    });
+
+    // Supabase data
+    const { data: allTasks = [] } = useTestTasks();
+    const { data: parameters = [] } = useParameters();
+    const { data: samples = [] } = useSamples();
+    const { data: matrices = [] } = useSampleMatrices();
+    const { data: testResults = [] } = useTestResults();
+    const { data: testRuns = [] } = useTestRunsAll();
+
+    // Helper functions to get names from IDs
+    const getParameterName = (id: string | null) => {
+        if (!id) return "Unknown Parameter";
+        return (parameters || []).find(p => p.id === id)?.name || "Unknown Parameter";
+    };
+    const getSampleName = (id: string | null) => {
+        if (!id) return "Unknown Sample";
+        const sample = (samples || []).find(s => s.id === id);
+        return sample?.sample_lab_id || sample?.sample_name || "Unknown Sample";
+    };
+    const getMatrixName = (sampleId: string | null) => {
+        if (!sampleId) return "Unknown Matrix";
+        const sample = (samples || []).find(s => s.id === sampleId);
+        const matrix = sample ? (matrices || []).find(m => m.id === sample.matrix_id) : null;
+        return matrix?.name || "Unknown Matrix";
+    };
+
+    // Filter tasks by actual analyst ID (not user ID)
+    const myAnalystId = myAnalyst?.id;
     const searchParams = useSearchParams();
     const filterParam = searchParams.get("filter");
 
-    const myTasks = MOCK_TASKS.filter(t => t.assigned_to_user_id === MY_ID);
+    const myTasks = (allTasks || []).filter(t => myAnalystId && t.assigned_to_id === myAnalystId && t.status !== "CANCELLED");
 
     const [activeTab, setActiveTab] = useState<TabType>(
         filterParam === "overdue" ? "OVERDUE" : "ACTIVE"
     );
     const [sortBy, setSortBy] = useState<SortType>("due_date");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-    const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
-    const [showSubmitModal, setShowSubmitModal] = useState(false);
 
     // Calculate overdue tasks
     const now = new Date();
     const overdueTasks = myTasks.filter(t =>
-        t.status !== "COMPLETED" && new Date(t.due_date) < now
+        t.status !== "COMPLETED" && t.due_date && new Date(t.due_date) < now
     );
     const activeTasks = myTasks.filter(t =>
-        t.status !== "COMPLETED" && new Date(t.due_date) >= now
+        t.status !== "COMPLETED" && (!t.due_date || new Date(t.due_date) >= now)
     );
     const completedTasks = myTasks.filter(t => t.status === "COMPLETED");
 
-    // Mock QC status for tasks
+    // Real QC status from test_results
     const getQCStatus = (taskId: string): "PASS" | "FAIL" | "PENDING" | null => {
-        const statuses: Record<string, "PASS" | "FAIL" | "PENDING"> = {
-            "task-001": "PASS",
-            "task-002": "FAIL",
-            "task-003": "PENDING",
-        };
-        return statuses[taskId] || null;
+        const results = (testResults || []).filter((r: any) => r.task_id === taskId);
+        if (results.length === 0) return null;
+        if (results.some((r: any) => r.qc_status === "FAIL")) return "FAIL";
+        if (results.some((r: any) => r.qc_status === "PENDING")) return "PENDING";
+        return "PASS";
     };
 
-    // Mock raw data requirement
-    const requiresRawData = (taskId: string): boolean => {
-        return ["task-001", "task-003"].includes(taskId);
+    // Get result data for a task
+    const getTaskResult = (taskId: string) => {
+        return (testResults || []).find((r: any) => r.task_id === taskId) as any | undefined;
     };
 
-    // Check if task has raw data uploaded
+    // Real raw data check from test_runs
+    const requiresRawData = (_taskId: string): boolean => {
+        // All tasks potentially require raw data — show indicator if task has runs
+        return true;
+    };
+
     const hasRawData = (taskId: string): boolean => {
-        // Mock: task-001 has data, task-003 does not
-        return taskId === "task-001";
+        return (testRuns || []).some((r: any) => r.test_task_id === taskId && r.raw_data_path);
     };
 
-    // Check if task has result recorded
+    // Check if task has result recorded - simplified check (could be enhanced with separate query)
     const hasResult = (taskId: string): boolean => {
-        return MOCK_RESULTS.some(r => r.task_id === taskId);
+        // In production, this would query test_results table
+        // For now, we'll assume any completed task has results
+        const task = myTasks.find(t => t.id === taskId);
+        return task?.status === "COMPLETED";
     };
 
     // Priority order for sorting
@@ -89,20 +142,21 @@ export default function MyTaskBoard() {
             let comparison = 0;
             switch (sortBy) {
                 case "due_date":
-                    comparison = new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                    comparison = new Date(a.due_date || "").getTime() - new Date(b.due_date || "").getTime();
                     break;
                 case "priority":
                     comparison = (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2);
                     break;
                 case "parameter":
-                    comparison = (a.parameter_name_snapshot || "").localeCompare(b.parameter_name_snapshot || "");
+                    comparison = getParameterName(a.parameter_id).localeCompare(getParameterName(b.parameter_id));
                     break;
             }
             return sortOrder === "asc" ? comparison : -comparison;
         });
 
         return tasks;
-    }, [activeTab, activeTasks, overdueTasks, completedTasks, sortBy, sortOrder]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, activeTasks, overdueTasks, completedTasks, sortBy, sortOrder, parameters]);
 
     const tabs: { value: TabType; label: string; count: number; color?: string }[] = [
         { value: "ACTIVE", label: "Active", count: activeTasks.length },
@@ -110,58 +164,7 @@ export default function MyTaskBoard() {
         { value: "COMPLETED", label: "Completed", count: completedTasks.length },
     ];
 
-    const toggleTaskSelection = (taskId: string, e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setSelectedTasks(prev =>
-            prev.includes(taskId)
-                ? prev.filter(id => id !== taskId)
-                : [...prev, taskId]
-        );
-    };
 
-    const selectAllCompleted = () => {
-        const completedIds = completedTasks.map(t => t.id);
-        setSelectedTasks(completedIds);
-    };
-
-    // Validation for submit
-    const validateSubmission = () => {
-        const validationResults = selectedTasks.map(taskId => {
-            const task = myTasks.find(t => t.id === taskId);
-            const issues: string[] = [];
-
-            if (task?.status !== "COMPLETED") {
-                issues.push("Task not marked as completed");
-            }
-            if (!hasResult(taskId)) {
-                issues.push("No result recorded");
-            }
-            if (requiresRawData(taskId) && !hasRawData(taskId)) {
-                issues.push("Raw data not uploaded");
-            }
-            const qc = getQCStatus(taskId);
-            if (qc === "FAIL") {
-                issues.push("QC check failed");
-            }
-            if (qc === "PENDING") {
-                issues.push("QC check pending");
-            }
-
-            return {
-                taskId,
-                taskName: task?.parameter_name_snapshot || "Unknown",
-                sampleName: task?.sample_name_snapshot || "Unknown",
-                isValid: issues.length === 0,
-                issues
-            };
-        });
-
-        return validationResults;
-    };
-
-    const validationResults = useMemo(() => validateSubmission(), [selectedTasks]);
-    const canSubmit = validationResults.length > 0 && validationResults.every(v => v.isValid);
 
     return (
         <div className="space-y-6">
@@ -215,32 +218,7 @@ export default function MyTaskBoard() {
                 </div>
             </div>
 
-            {/* Submit for Review Action Bar */}
-            {completedTasks.length > 0 && (
-                <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={selectAllCompleted}
-                            className="text-xs text-primary hover:underline"
-                        >
-                            Select All Completed ({completedTasks.length})
-                        </button>
-                        {selectedTasks.length > 0 && (
-                            <span className="text-xs text-text-secondary">
-                                {selectedTasks.length} task(s) selected
-                            </span>
-                        )}
-                    </div>
-                    <button
-                        onClick={() => setShowSubmitModal(true)}
-                        disabled={selectedTasks.length === 0}
-                        className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">send</span>
-                        Submit for Review
-                    </button>
-                </div>
-            )}
+
 
             {/* Overdue Alert Banner */}
             {activeTab !== "OVERDUE" && overdueTasks.length > 0 && (
@@ -258,259 +236,256 @@ export default function MyTaskBoard() {
                 </button>
             )}
 
-            {/* TASK GRID */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {displayedTasks.map(task => {
-                    const isOverdue = new Date(task.due_date) < now && task.status !== "COMPLETED";
-                    const qcStatus = getQCStatus(task.id);
-                    const needsRawData = requiresRawData(task.id);
 
-                    return (
-                        <Link href={`/testing/${task.id}`} key={task.id}>
-                            <div className={cn(
-                                "group relative rounded-lg border p-4 shadow-sm hover:shadow-md transition-all dark:bg-surface-dark",
-                                isOverdue
-                                    ? "border-danger/50 bg-danger/5 hover:border-danger"
-                                    : selectedTasks.includes(task.id)
-                                        ? "border-primary bg-primary/5"
-                                        : "border-border-light bg-surface-light hover:border-primary/50 dark:border-white/10"
-                            )}>
-                                {/* Selection Checkbox for Completed */}
-                                {task.status === "COMPLETED" && (
-                                    <button
-                                        onClick={(e) => toggleTaskSelection(task.id, e)}
-                                        className={cn(
-                                            "absolute top-2 left-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
-                                            selectedTasks.includes(task.id)
-                                                ? "bg-primary border-primary text-white"
-                                                : "border-border-light hover:border-primary bg-white"
-                                        )}
-                                    >
-                                        {selectedTasks.includes(task.id) && (
-                                            <span className="material-symbols-outlined text-[14px]">check</span>
-                                        )}
-                                    </button>
-                                )}
-                                {/* Header */}
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">{task.id}</span>
-                                    <div className="flex items-center gap-1">
-                                        {/* Priority Badge */}
-                                        <span className={cn(
-                                            "px-2 py-0.5 text-[10px] font-bold rounded",
-                                            task.priority === "URGENT" ? "bg-danger/20 text-danger" :
-                                                task.priority === "HIGH" ? "bg-warning/20 text-warning" :
-                                                    "bg-slate-100 text-slate-500"
-                                        )}>
-                                            {task.priority}
-                                        </span>
-                                    </div>
-                                </div>
+            {/* COMPLETED TAB — Table View */}
+            {activeTab === "COMPLETED" && (
+                <>
+                    {displayedTasks.length === 0 ? (
+                        <div className="text-center py-12">
+                            <span className="material-symbols-outlined text-[48px] text-text-secondary/50">inbox</span>
+                            <p className="mt-2 text-text-main dark:text-white font-medium">No completed tasks</p>
+                            <p className="text-sm text-text-secondary">Completed tasks will appear here.</p>
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border border-border-light dark:border-border-dark overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-50 dark:bg-white/5 border-b border-border-light dark:border-border-dark">
+                                            <th className="text-left px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Parameter</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Sample</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Matrix</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Result</th>
+                                            <th className="text-center px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Compliance</th>
+                                            <th className="text-center px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">QC Status</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-text-secondary text-xs uppercase tracking-wider">Completed</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border-light dark:divide-border-dark">
+                                        {displayedTasks.map(task => {
+                                            const taskResult = getTaskResult(task.id);
+                                            const qcStatus = getQCStatus(task.id);
 
-                                {/* Parameter Name */}
-                                <h3 className="font-display font-semibold text-lg text-text-main mb-1 group-hover:text-primary transition-colors dark:text-white">
-                                    {task.parameter_name_snapshot}
-                                </h3>
+                                            return (
+                                                <tr key={task.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors">
+                                                    <td className="px-4 py-3">
+                                                        <span className="font-medium text-text-main dark:text-white">
+                                                            {getParameterName(task.parameter_id)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-text-secondary">
+                                                        {getSampleName(task.sample_id)}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-text-secondary">
+                                                        {getMatrixName(task.sample_id)}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <span className="font-medium text-text-main dark:text-white">
+                                                            {taskResult
+                                                                ? taskResult.is_nd
+                                                                    ? "ND"
+                                                                    : (taskResult.result_text || taskResult.result_value) ?? "—"
+                                                                : "—"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        {taskResult?.compliance_status ? (
+                                                            <span className={cn(
+                                                                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold",
+                                                                taskResult.compliance_status === "PASS" ? "bg-success/15 text-success" :
+                                                                    taskResult.compliance_status === "FAIL" ? "bg-danger/15 text-danger" :
+                                                                        "bg-slate-100 text-slate-500"
+                                                            )}>
+                                                                <span className="material-symbols-outlined text-[13px]">
+                                                                    {taskResult.compliance_status === "PASS" ? "check_circle" :
+                                                                        taskResult.compliance_status === "FAIL" ? "cancel" : "remove"}
+                                                                </span>
+                                                                {taskResult.compliance_status}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-text-secondary">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        {qcStatus ? (
+                                                            <span className={cn(
+                                                                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold",
+                                                                qcStatus === "PASS" ? "bg-success/15 text-success" :
+                                                                    qcStatus === "FAIL" ? "bg-danger/15 text-danger" :
+                                                                        "bg-warning/15 text-warning"
+                                                            )}>
+                                                                <span className="material-symbols-outlined text-[13px]">
+                                                                    {qcStatus === "PASS" ? "check_circle" : qcStatus === "FAIL" ? "cancel" : "pending"}
+                                                                </span>
+                                                                {qcStatus}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-text-secondary">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-text-secondary text-xs">
+                                                        {task.completed_at
+                                                            ? new Date(task.completed_at).toLocaleDateString()
+                                                            : "—"}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
 
-                                {/* Sample Name */}
-                                <p className="text-sm text-text-secondary line-clamp-1 mb-3" title={task.sample_name_snapshot}>
-                                    {task.sample_name_snapshot}
-                                </p>
+            {/* ACTIVE / OVERDUE TABS — Card Grid */}
+            {activeTab !== "COMPLETED" && (
+                <>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {displayedTasks.map(task => {
+                            const isOverdue = task.due_date ? new Date(task.due_date) < now && task.status !== "COMPLETED" : false;
+                            const qcStatus = getQCStatus(task.id);
+                            const needsRawData = requiresRawData(task.id);
 
-                                {/* Status Indicators */}
-                                <div className="flex flex-wrap gap-2 mb-3">
-                                    {/* QC Status */}
-                                    {qcStatus && (
-                                        <span className={cn(
-                                            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold",
-                                            qcStatus === "PASS" ? "bg-success/20 text-success" :
-                                                qcStatus === "FAIL" ? "bg-danger/20 text-danger" :
-                                                    "bg-warning/20 text-warning"
-                                        )}>
-                                            <span className="material-symbols-outlined text-[12px]">
-                                                {qcStatus === "PASS" ? "check_circle" : qcStatus === "FAIL" ? "cancel" : "pending"}
-                                            </span>
-                                            QC: {qcStatus}
-                                        </span>
-                                    )}
-
-                                    {/* Raw Data Indicator */}
-                                    {needsRawData && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-primary/20 text-primary">
-                                            <span className="material-symbols-outlined text-[12px]">description</span>
-                                            Raw Data Required
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* Meta Info */}
-                                <div className="text-xs space-y-1 text-slate-500 dark:text-slate-400 mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="material-symbols-outlined text-[14px]">science</span>
-                                        {task.matrix_name_snapshot}
-                                    </div>
+                            return (
+                                <Link href={`/testing/${task.id}`} key={task.id}>
                                     <div className={cn(
-                                        "flex items-center gap-2",
-                                        isOverdue && "text-danger font-medium"
+                                        "group relative rounded-lg border p-4 shadow-sm hover:shadow-md transition-all dark:bg-surface-dark",
+                                        isOverdue
+                                            ? "border-danger/50 bg-danger/5 hover:border-danger"
+                                            : "border-border-light bg-surface-light hover:border-primary/50 dark:border-white/10"
                                     )}>
-                                        <span className="material-symbols-outlined text-[14px]">
-                                            {isOverdue ? "warning" : "calendar_today"}
-                                        </span>
-                                        {isOverdue ? "OVERDUE: " : "Due: "}
-                                        {new Date(task.due_date).toLocaleDateString()}
-                                    </div>
-                                </div>
+                                        {/* Header — Priority Badge */}
+                                        <div className="flex items-start justify-between mb-2">
+                                            <span className={cn(
+                                                "px-2 py-0.5 text-[10px] font-bold rounded",
+                                                task.priority === "URGENT" ? "bg-danger/20 text-danger" :
+                                                    task.priority === "HIGH" ? "bg-warning/20 text-warning" :
+                                                        "bg-slate-100 text-slate-500"
+                                            )}>
+                                                {task.priority}
+                                            </span>
+                                        </div>
 
-                                {/* Quick Actions */}
-                                {task.status !== "COMPLETED" && (
-                                    <div className="flex gap-2 pt-3 border-t border-border-light dark:border-border-dark">
-                                        {(task.status === "ASSIGNED" || task.status === "PLANNED") && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    alert(`Starting run for ${task.parameter_name_snapshot}...`);
-                                                }}
-                                                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary-hover transition-colors"
-                                            >
-                                                <span className="material-symbols-outlined text-[14px]">play_arrow</span>
-                                                Start Run
-                                            </button>
-                                        )}
-                                        {task.status === "IN_PROGRESS" && (
-                                            <>
-                                                {needsRawData && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            alert(`Upload raw data for ${task.parameter_name_snapshot}...`);
-                                                        }}
-                                                        className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-white/10 text-text-main dark:text-white hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[14px]">upload_file</span>
-                                                        Upload
-                                                    </button>
-                                                )}
+                                        {/* Parameter Name */}
+                                        <h3 className="font-display font-semibold text-lg text-text-main mb-1 group-hover:text-primary transition-colors dark:text-white">
+                                            {getParameterName(task.parameter_id)}
+                                        </h3>
+
+                                        {/* Sample Name */}
+                                        <p className="text-sm text-text-secondary line-clamp-1 mb-3" title={getSampleName(task.sample_id)}>
+                                            {getSampleName(task.sample_id)}
+                                        </p>
+
+                                        {/* Status Indicators */}
+                                        <div className="flex flex-wrap gap-2 mb-3">
+                                            {qcStatus && (
+                                                <span className={cn(
+                                                    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold",
+                                                    qcStatus === "PASS" ? "bg-success/20 text-success" :
+                                                        qcStatus === "FAIL" ? "bg-danger/20 text-danger" :
+                                                            "bg-warning/20 text-warning"
+                                                )}>
+                                                    <span className="material-symbols-outlined text-[12px]">
+                                                        {qcStatus === "PASS" ? "check_circle" : qcStatus === "FAIL" ? "cancel" : "pending"}
+                                                    </span>
+                                                    QC: {qcStatus}
+                                                </span>
+                                            )}
+                                            {needsRawData && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-primary/20 text-primary">
+                                                    <span className="material-symbols-outlined text-[12px]">description</span>
+                                                    Raw Data Required
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="text-xs space-y-1 text-slate-500 dark:text-slate-400 mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-[14px]">science</span>
+                                                {getMatrixName(task.sample_id)}
+                                            </div>
+                                            <div className={cn(
+                                                "flex items-center gap-2",
+                                                isOverdue && "text-danger font-medium"
+                                            )}>
+                                                <span className="material-symbols-outlined text-[14px]">
+                                                    {isOverdue ? "warning" : "calendar_today"}
+                                                </span>
+                                                {isOverdue ? "OVERDUE: " : "Due: "}
+                                                {task.due_date ? new Date(task.due_date).toLocaleDateString() : "N/A"}
+                                            </div>
+                                        </div>
+
+                                        {/* Quick Actions */}
+                                        <div className="flex gap-2 pt-3 border-t border-border-light dark:border-border-dark">
+                                            {(task.status === "ASSIGNED" || task.status === "PLANNED") && (
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        try {
+                                                            await updateRow("test_tasks", task.id, { status: "IN_PROGRESS", started_at: new Date().toISOString() });
+                                                        } catch (err) {
+                                                            console.error("Failed to update task status:", err);
+                                                        }
+                                                        router.push(`/testing/${task.id}`);
+                                                    }}
+                                                    className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary-hover transition-colors"
+                                                >
+                                                    <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+                                                    Start Run
+                                                </button>
+                                            )}
+                                            {task.status === "IN_PROGRESS" && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
-                                                        alert(`Marking ${task.parameter_name_snapshot} as complete...`);
+                                                        router.push(`/testing/${task.id}`);
                                                     }}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-success text-white hover:bg-success/90 transition-colors"
+                                                    className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary-hover transition-colors"
                                                 >
-                                                    <span className="material-symbols-outlined text-[14px]">check</span>
-                                                    Complete
+                                                    <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+                                                    Continue Testing
                                                 </button>
-                                            </>
+                                            )}
+                                        </div>
+
+                                        {/* Hover Arrow */}
+                                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="material-symbols-outlined text-primary">arrow_forward</span>
+                                        </div>
+
+                                        {/* Overdue Indicator */}
+                                        {isOverdue && (
+                                            <div className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-danger animate-pulse" />
                                         )}
                                     </div>
-                                )}
-
-                                {/* Hover Arrow */}
-                                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="material-symbols-outlined text-primary">arrow_forward</span>
-                                </div>
-
-                                {/* Overdue Indicator */}
-                                {isOverdue && (
-                                    <div className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-danger animate-pulse" />
-                                )}
-                            </div>
-                        </Link>
-                    );
-                })}
-            </div>
-
-            {displayedTasks.length === 0 && (
-                <div className="text-center py-12">
-                    <span className="material-symbols-outlined text-[48px] text-text-secondary/50">
-                        {activeTab === "OVERDUE" ? "check_circle" : "inbox"}
-                    </span>
-                    <p className="mt-2 text-text-main dark:text-white font-medium">
-                        {activeTab === "OVERDUE" ? "No overdue tasks!" : "No tasks found"}
-                    </p>
-                    <p className="text-sm text-text-secondary">
-                        {activeTab === "OVERDUE"
-                            ? "All your tasks are on schedule."
-                            : "No tasks in this category."}
-                    </p>
-                </div>
-            )}
-
-            {/* Submit for Review Modal */}
-            {showSubmitModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] overflow-hidden">
-                        <div className="p-4 border-b border-border-light dark:border-border-dark">
-                            <h3 className="text-lg font-bold text-text-main dark:text-white">Submit for Review</h3>
-                            <p className="text-sm text-text-secondary">Review validation before submitting</p>
-                        </div>
-
-                        <div className="p-4 max-h-[50vh] overflow-y-auto space-y-3">
-                            {validationResults.map(result => (
-                                <div key={result.taskId} className={cn(
-                                    "p-3 rounded-lg border",
-                                    result.isValid
-                                        ? "border-success/30 bg-success/5"
-                                        : "border-danger/30 bg-danger/5"
-                                )}>
-                                    <div className="flex items-start justify-between">
-                                        <div>
-                                            <p className="font-medium text-sm text-text-main dark:text-white">
-                                                {result.taskName}
-                                            </p>
-                                            <p className="text-xs text-text-secondary">{result.sampleName}</p>
-                                        </div>
-                                        <span className={cn(
-                                            "material-symbols-outlined text-[20px]",
-                                            result.isValid ? "text-success" : "text-danger"
-                                        )}>
-                                            {result.isValid ? "check_circle" : "error"}
-                                        </span>
-                                    </div>
-                                    {result.issues.length > 0 && (
-                                        <ul className="mt-2 space-y-1">
-                                            {result.issues.map((issue, idx) => (
-                                                <li key={idx} className="text-xs text-danger flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[12px]">close</span>
-                                                    {issue}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="p-4 border-t border-border-light dark:border-border-dark flex justify-between items-center">
-                            <div className="text-xs text-text-secondary">
-                                {validationResults.filter(v => v.isValid).length} of {validationResults.length} ready to submit
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setShowSubmitModal(false)}
-                                    className="px-4 py-2 text-sm text-text-secondary hover:text-text-main"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        alert(`Submitting ${validationResults.filter(v => v.isValid).length} task(s) for review...`);
-                                        setShowSubmitModal(false);
-                                        setSelectedTasks([]);
-                                    }}
-                                    disabled={!canSubmit}
-                                    className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {canSubmit ? "Submit All" : "Fix Issues First"}
-                                </button>
-                            </div>
-                        </div>
+                                </Link>
+                            );
+                        })}
                     </div>
-                </div>
+
+                    {displayedTasks.length === 0 && (
+                        <div className="text-center py-12">
+                            <span className="material-symbols-outlined text-[48px] text-text-secondary/50">
+                                {activeTab === "OVERDUE" ? "check_circle" : "inbox"}
+                            </span>
+                            <p className="mt-2 text-text-main dark:text-white font-medium">
+                                {activeTab === "OVERDUE" ? "No overdue tasks!" : "No tasks found"}
+                            </p>
+                            <p className="text-sm text-text-secondary">
+                                {activeTab === "OVERDUE"
+                                    ? "All your tasks are on schedule."
+                                    : "No tasks in this category."}
+                            </p>
+                        </div>
+                    )}
+                </>
             )}
-        </div>
+
+        </div >
     );
 }

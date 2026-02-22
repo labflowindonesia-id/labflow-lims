@@ -1,0 +1,44 @@
+src/app/(dashboard)/change-requests/page.tsx(140,20): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/change-requests/page.tsx(459,38): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/quotations/[id]/review/page.tsx(34,22): error TS18047: 'customers' is possibly 'null'.
+src/app/(dashboard)/quotations/[id]/review/page.tsx(118,17): error TS2322: Type '{ title: string; description: string; backHref: string; actions: Element; }' is not assignable to type 'IntrinsicAttributes & ActionToolbarProps'.
+  Property 'backHref' does not exist on type 'IntrinsicAttributes & ActionToolbarProps'.
+src/app/(dashboard)/reports/page.tsx(46,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(47,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(60,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(61,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(74,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(75,26): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(86,27): error TS18047: 'workOrders' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(86,80): error TS2367: This comparison appears to be unintentional because the types '"CANCELLED" | "RECEIVED_DRAFT" | "RECEIVED_CONFIRMED" | "IN_ANALYSIS" | "IN_REVIEW"' and '"IN_PROGRESS"' have no overlap.
+src/app/(dashboard)/reports/page.tsx(210,30): error TS18047: 'customers' is possibly 'null'.
+src/app/(dashboard)/reports/page.tsx(221,30): error TS18047: 'matrices' is possibly 'null'.
+src/app/(dashboard)/settings/page.tsx(335,56): error TS2322: Type '"phone"' is not assignable to type '"name" | "code" | "address" | "created_at" | "updated_at" | "id" | "is_active" | "city" | "country" | "tax_id" | undefined'.
+src/app/(dashboard)/settings/page.tsx(380,57): error TS2322: Type '"symbol"' is not assignable to type '"name" | "code" | "created_at" | "updated_at" | "id" | "is_active" | "unit_id" | "group_name" | undefined'.
+src/app/(dashboard)/settings/page.tsx(383,41): error TS2322: Type '"category"' is not assignable to type '"name" | "code" | "created_at" | "updated_at" | "id" | "is_active" | "unit_id" | "group_name" | undefined'.
+src/app/(dashboard)/settings/page.tsx(386,52): error TS2339: Property 'category' does not exist on type '{ id: string; name: string; code: string | null; group_name: string | null; unit_id: string | null; is_active: boolean; created_at: string; updated_at: string; }'.
+src/app/(dashboard)/settings/page.tsx(426,55): error TS2322: Type '"code"' is not assignable to type '"name" | "created_at" | "updated_at" | "id" | "is_active" | "category" | undefined'.
+src/app/(dashboard)/settings/page.tsx(467,41): error TS2322: Type '"is_accredited"' is not assignable to type '"name" | "code" | "description" | "created_at" | "updated_at" | "id" | "is_active" | undefined'.
+src/app/(dashboard)/settings/page.tsx(471,51): error TS2339: Property 'is_accredited' does not exist on type '{ id: string; code: string; name: string; description: string | null; is_active: boolean; created_at: string; updated_at: string; }'.
+src/app/(dashboard)/settings/page.tsx(473,52): error TS2339: Property 'is_accredited' does not exist on type '{ id: string; code: string; name: string; description: string | null; is_active: boolean; created_at: string; updated_at: string; }'.
+src/app/(dashboard)/testing/page.tsx(19,18): error TS18047: 'tasks' is possibly 'null'.
+src/app/(dashboard)/testing/page.tsx(34,41): error TS2339: Property 'parameter_name_snapshot' does not exist on type '{ id: string; task_number: string; requested_test_id: string | null; sample_id: string | null; work_plan_id: string | null; parameter_id: string | null; subparameter_id: string | null; ... 15 more ...; updated_at: string; }'.
+src/app/(dashboard)/testing/page.tsx(35,46): error TS2339: Property 'sample_name_snapshot' does not exist on type '{ id: string; task_number: string; requested_test_id: string | null; sample_id: string | null; work_plan_id: string | null; parameter_id: string | null; subparameter_id: string | null; ... 15 more ...; updated_at: string; }'.
+src/app/(dashboard)/testing/page.tsx(35,103): error TS2339: Property 'method_name_snapshot' does not exist on type '{ id: string; task_number: string; requested_test_id: string | null; sample_id: string | null; work_plan_id: string | null; parameter_id: string | null; subparameter_id: string | null; ... 15 more ...; updated_at: string; }'.
+src/app/(dashboard)/testing/page.tsx(39,31): error TS2339: Property 'work_order_id' does not exist on type '{ id: string; task_number: string; requested_test_id: string | null; sample_id: string | null; work_plan_id: string | null; parameter_id: string | null; subparameter_id: string | null; ... 15 more ...; updated_at: string; }'.
+src/features/portal/components/ClientDashboard.tsx(75,22): error TS18047: 'allWorkOrders' is possibly 'null'.
+src/features/portal/components/ClientDashboard.tsx(122,23): error TS18047: 'allWorkOrders' is possibly 'null'.
+src/features/portal/components/ClientDashboard.tsx(130,27): error TS18047: 'allTasks' is possibly 'null'.
+src/features/portal/components/ClientDashboard.tsx(407,46): error TS18047: 'allWorkOrders' is possibly 'null'.
+src/features/quotations/components/ClientSelector.tsx(19,23): error TS2352: Conversion of type '{ id: string; name: string; code: string | null; address: string | null; city: string | null; country: string | null; tax_id: string | null; is_active: boolean; created_at: string; updated_at: string; }[] | null' to type 'Customer[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ id: string; name: string; code: string | null; address: string | null; city: string | null; country: string | null; tax_id: string | null; is_active: boolean; created_at: string; updated_at: string; }[]' is not comparable to type 'Customer[]'.
+    Property 'contacts' is missing in type '{ id: string; name: string; code: string | null; address: string | null; city: string | null; country: string | null; tax_id: string | null; is_active: boolean; created_at: string; updated_at: string; }' but required in type 'Customer'.
+src/features/quotations/components/QuotationsReviewTable.tsx(32,16): error TS18047: 'allQuotations' is possibly 'null'.
+src/features/receiving/components/CoCStep.tsx(37,25): error TS18047: 'users' is possibly 'null'.
+src/features/receiving/components/CoCStep.tsx(186,38): error TS18047: 'users' is possibly 'null'.
+src/features/receiving/components/ReceivingTable.tsx(26,41): error TS18047: 'workOrders' is possibly 'null'.
+src/features/receiving/components/ReceivingTable.tsx(28,30): error TS18047: 'customers' is possibly 'null'.
+src/features/receiving/components/ReceivingTable.tsx(35,26): error TS2488: Type '{ id: string; work_order_number: string; quotation_id: string | null; customer_id: string; customer_name_snapshot: string | null; customer_address_snapshot: string | null; contract_number: string | null; ... 8 more ...; updated_at: string; }[] | null' must have a '[Symbol.iterator]()' method that returns an iterator.
+src/features/receiving/components/ReceivingTable.tsx(191,88): error TS18047: 'workOrders' is possibly 'null'.
+src/features/receiving/components/WorkOrderDetailView.tsx(32,29): error TS2367: This comparison appears to be unintentional because the types 'WorkOrderStatus' and '"IN_PROGRESS"' have no overlap.
+src/features/reporting/components/ResultsReviewTable.tsx(15,25): error TS18047: 'workOrders' is possibly 'null'.

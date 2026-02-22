@@ -3,18 +3,45 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { createBrowserClient } from "@supabase/ssr";
 
 export default function LoginPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => {
+        setError(null);
+
+        const formData = new FormData(e.currentTarget);
+        const email = formData.get("email") as string;
+        const password = formData.get("password") as string;
+
+        try {
+            const supabase = createBrowserClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            );
+
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (authError) {
+                setError(authError.message);
+                setIsLoading(false);
+                return;
+            }
+
             router.push("/portal");
-        }, 1000);
+            router.refresh();
+        } catch {
+            setError("An unexpected error occurred. Please try again.");
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -30,6 +57,15 @@ export default function LoginPage() {
                     </p>
                 </div>
 
+                {error && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-red-600 text-lg">error</span>
+                            <p className="text-sm text-red-600">{error}</p>
+                        </div>
+                    </div>
+                )}
+
                 <form className="mt-8 space-y-6" onSubmit={handleLogin}>
                     <div className="space-y-4 rounded-md shadow-sm">
                         <div>
@@ -42,7 +78,6 @@ export default function LoginPage() {
                                 required
                                 className="relative block w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 placeholder-slate-500 focus:z-10 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
                                 placeholder="Email address"
-                                defaultValue="budi.s@indofood.co.id"
                             />
                         </div>
                         <div>
@@ -55,7 +90,6 @@ export default function LoginPage() {
                                 required
                                 className="relative block w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 placeholder-slate-500 focus:z-10 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
                                 placeholder="Password"
-                                defaultValue="password"
                             />
                         </div>
                     </div>

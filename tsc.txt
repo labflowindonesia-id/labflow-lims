@@ -1,0 +1,109 @@
+src/app/(dashboard)/quotations/[id]/review/page.tsx(118,17): error TS2322: Type '{ title: string; description: string; backHref: string; actions: Element; }' is not assignable to type 'IntrinsicAttributes & ActionToolbarProps'.
+  Property 'backHref' does not exist on type 'IntrinsicAttributes & ActionToolbarProps'.
+src/app/(dashboard)/settings/page.tsx(194,80): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "analyst_profiles", never, "POST">', gave the following error.
+    Argument of type '{ user_id: string; is_active: boolean; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "analyst_profiles", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'user_id' does not exist in type 'never[]'.
+src/app/(dashboard)/settings/page.tsx(204,42): error TS2339: Property 'employee_id' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(205,45): error TS2339: Property 'specialization' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(206,40): error TS2339: Property 'education' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(207,47): error TS2339: Property 'years_experience' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(208,46): error TS2339: Property 'job_description' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(212,90): error TS2339: Property 'id' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(213,90): error TS2339: Property 'id' does not exist on type 'never'.
+src/app/(dashboard)/settings/page.tsx(238,72): error TS2345: Argument of type '{ employee_id: string; specialization: string; education: string; years_experience: number; job_description: string; }' is not assignable to parameter of type 'never'.
+src/app/(dashboard)/settings/page.tsx(264,89): error TS2345: Argument of type '{ document_url: string; document_name: string; }' is not assignable to parameter of type 'never'.
+src/app/(dashboard)/settings/page.tsx(405,122): error TS2367: This comparison appears to be unintentional because the types 'UserRole' and '"analyst"' have no overlap.
+src/features/quotations/components/QuotationDetailView.tsx(471,68): error TS2339: Property 'rejection_reason' does not exist on type '{ id: string; quotation_number: string; customer_id: string; customer_name_snapshot: string | null; customer_address_snapshot: string | null; status: QuotationStatus; ... 13 more ...; updated_at: string; }'.
+src/features/quotations/components/QuotationDetailView.tsx(473,100): error TS2339: Property 'rejection_reason' does not exist on type '{ id: string; quotation_number: string; customer_id: string; customer_name_snapshot: string | null; customer_address_snapshot: string | null; status: QuotationStatus; ... 13 more ...; updated_at: string; }'.
+src/features/quotations/components/QuotationDetailView.tsx(505,89): error TS2339: Property 'tat_days' does not exist on type '{ id: string; quotation_number: string; customer_id: string; customer_name_snapshot: string | null; customer_address_snapshot: string | null; status: QuotationStatus; ... 13 more ...; updated_at: string; }'.
+src/features/quotations/components/QuotationForm.tsx(139,25): error TS2345: Argument of type '{ quotation_id: string; line_number: number; parameter_id: string | null; subparameter_id: string | null; package_id: string | null; method_id: string | null; instrument_id: string | null; ... 4 more ...; tat_days: number; }[]' is not assignable to parameter of type 'QuotationLineInsert[]'.
+  Type '{ quotation_id: string; line_number: number; parameter_id: string | null; subparameter_id: string | null; package_id: string | null; method_id: string | null; instrument_id: string | null; ... 4 more ...; tat_days: number; }' is not assignable to type 'QuotationLineInsert'.
+    Types of property 'parameter_id' are incompatible.
+      Type 'string | null' is not assignable to type 'string | undefined'.
+        Type 'null' is not assignable to type 'string | undefined'.
+src/features/quotations/components/QuotationForm.tsx(190,41): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/quotations/components/QuotationForm.tsx(195,25): error TS2345: Argument of type '{ quotation_id: any; line_number: number; parameter_id: string | null; subparameter_id: string | null; package_id: string | null; method_id: string | null; instrument_id: string | null; ... 4 more ...; tat_days: number; }[]' is not assignable to parameter of type 'QuotationLineInsert[]'.
+  Type '{ quotation_id: any; line_number: number; parameter_id: string | null; subparameter_id: string | null; package_id: string | null; method_id: string | null; instrument_id: string | null; ... 4 more ...; tat_days: number; }' is not assignable to type 'QuotationLineInsert'.
+    Types of property 'parameter_id' are incompatible.
+      Type 'string | null' is not assignable to type 'string | undefined'.
+        Type 'null' is not assignable to type 'string | undefined'.
+src/features/quotations/components/QuotationForm.tsx(196,47): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/quotations/components/QuotationForm.tsx(214,36): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/quotations/services/quotationService.ts(93,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "quotations", never, "POST">', gave the following error.
+    Argument of type '{ created_at: string; updated_at: string; quotation_number: string; revision_number: number; customer_id: string; contact_id?: string; customer_name_snapshot?: string; customer_address_snapshot?: string; ... 17 more ...; id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "quotations", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'created_at' does not exist in type 'never[]'.
+src/features/quotations/services/quotationService.ts(108,17): error TS2345: Argument of type '{ updated_at: string; }' is not assignable to parameter of type 'never'.
+src/features/quotations/services/quotationService.ts(134,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "quotation_lines", never, "POST">', gave the following error.
+    Argument of type '{ created_at: string; updated_at: string; quotation_id: string; line_number: number; parameter_id?: string | undefined; subparameter_id?: string | undefined; package_id?: string | undefined; ... 10 more ...; id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "quotation_lines", never, "POST">', gave the following error.
+    Argument of type '{ created_at: string; updated_at: string; quotation_id: string; line_number: number; parameter_id?: string | undefined; subparameter_id?: string | undefined; package_id?: string | undefined; ... 10 more ...; id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ created_at: string; updated_at: string; quotation_id: string; line_number: number; parameter_id?: string; subparameter_id?: string; package_id?: string; method_id?: string; instrument_id?: string; ... 8 more ...; id: string; }' is not assignable to type 'never'.
+src/features/quotations/services/quotationService.ts(160,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Argument of type '{ changed_fields: string | null; created_at: string; entity_type: string; entity_id: string; action: "CREATE" | "UPDATE" | "DELETE" | "SUBMIT" | "APPROVE" | "REJECT" | "GENERATE_PDF"; ... 6 more ...; id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'changed_fields' does not exist in type 'never[]'.
+src/features/quotations/services/quotationService.ts(183,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "contract_reviews", never, "POST">', gave the following error.
+    Argument of type '{ created_at: string; updated_at: string; quotation_id: string; laboratory_capability_ok?: boolean; resource_availability_ok?: boolean; sample_requirements_ok?: boolean; method_availability_ok?: boolean; ... 6 more ...; id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "contract_reviews", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'created_at' does not exist in type 'never[]'.
+src/features/quotations/services/quotationService.ts(211,32): error TS2339: Property 'quotation_number' does not exist on type 'never'.
+src/features/receiving/components/ReceivingTable.tsx(217,37): error TS2367: This comparison appears to be unintentional because the types 'WorkOrderStatus' and '"IN_PROGRESS"' have no overlap.
+src/features/receiving/components/ReceivingTable.tsx(219,45): error TS2367: This comparison appears to be unintentional because the types '"CANCELLED" | "RECEIVED_DRAFT" | "RECEIVED_CONFIRMED" | "IN_ANALYSIS" | "IN_REVIEW"' and '"RECEIVED"' have no overlap.
+src/features/receiving/components/WorkOrderDetailView.tsx(32,29): error TS2367: This comparison appears to be unintentional because the types 'WorkOrderStatus' and '"IN_PROGRESS"' have no overlap.
+src/features/receiving/services/receivingService.ts(100,36): error TS2339: Property 'work_order_number' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(127,32): error TS2339: Property 'sample_lab_id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(166,25): error TS2339: Property 'customer_id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(173,25): error TS2339: Property 'matrix_id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(182,35): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(186,19): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(187,33): error TS2339: Property 'quotation_number' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(188,28): error TS2339: Property 'customer_id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(189,38): error TS2339: Property 'name' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(190,41): error TS2339: Property 'address' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(191,26): error TS2339: Property 'matrix_id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(192,34): error TS2339: Property 'name' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(215,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "work_orders", never, "POST">', gave the following error.
+    Argument of type '{ id: string; work_order_number: string; quotation_id: string; customer_id: string; customer_name_snapshot: string; customer_address_snapshot: string; matrix_id: string; status: string; received_date: string; total_samples: number; receiver_notes: string | null; created_by: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "work_orders", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/features/receiving/services/receivingService.ts(252,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "samples", never, "POST">', gave the following error.
+    Argument of type '{ id: string; work_order_id: string; sample_lab_id: string; sample_name: string; customer_sample_id: string | null; matrix_id: string; condition: string; condition_notes: string | null; storage_temperature: number | null; original_volume: number | null; volume_unit: string | null; sampling_date: string | null; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "samples", never, "POST">', gave the following error.
+    Argument of type '{ id: string; work_order_id: string; sample_lab_id: string; sample_name: string; customer_sample_id: string | null; matrix_id: string; condition: string; condition_notes: string | null; storage_temperature: number | null; original_volume: number | null; volume_unit: string | null; sampling_date: string | null; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ id: string; work_order_id: string; sample_lab_id: string; sample_name: string; customer_sample_id: string | null; matrix_id: string; condition: string; condition_notes: string | null; storage_temperature: number | null; original_volume: number | null; volume_unit: string | null; sampling_date: string | null; }' is not assignable to type 'never'.
+src/features/receiving/services/receivingService.ts(259,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Argument of type '{ id: string; entity_type: string; entity_id: string; action: string; user_id: string; user_email: string | undefined; new_values: { work_order_number: string; sample_lab_ids: string[]; quotation_id: string; total_samples: number; }; reason: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/features/receiving/services/receivingService.ts(299,21): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "requested_tests", never, "POST">', gave the following error.
+    Argument of type '{ id: string; sample_id: string; parameter_id: string; method_id: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "requested_tests", never, "POST">', gave the following error.
+    Argument of type '{ id: string; sample_id: string; parameter_id: string; method_id: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ id: string; sample_id: string; parameter_id: string; method_id: string; }' is not assignable to type 'never'.
+src/features/receiving/services/receivingService.ts(311,37): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/receiving/services/receivingService.ts(334,21): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "test_tasks", never, "POST">', gave the following error.
+    Argument of type '{ id: string; task_number: string; requested_test_id: string; sample_id: string; parameter_id: string; method_id: string; assigned_to_id: any; assigned_by: string; assigned_at: string; status: "IN_PROGRESS"; priority: "NORMAL"; planned_date: string; due_date: string; }[]' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "test_tasks", never, "POST">', gave the following error.
+    Argument of type '{ id: string; task_number: string; requested_test_id: string; sample_id: string; parameter_id: string; method_id: string; assigned_to_id: any; assigned_by: string; assigned_at: string; status: "IN_PROGRESS"; priority: "NORMAL"; planned_date: string; due_date: string; }[]' is not assignable to parameter of type 'never[]'.
+      Type '{ id: string; task_number: string; requested_test_id: string; sample_id: string; parameter_id: string; method_id: string; assigned_to_id: any; assigned_by: string; assigned_at: string; status: "IN_PROGRESS"; priority: "NORMAL"; planned_date: string; due_date: string; }' is not assignable to type 'never'.
+src/features/receiving/services/receivingService.ts(341,17): error TS2345: Argument of type '{ status: string; }' is not assignable to parameter of type 'never'.
+src/features/receiving/services/receivingService.ts(363,59): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated" | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Argument of type '{ id: string; entity_type: string; entity_id: string; action: string; user_id: string; user_email: string | undefined; new_values: { customer_id: string; customer_name: string; samples: { sample_name: string; condition: string; }[]; }; reason: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated" | undefined; defaultToNull?: boolean | undefined; } | undefined): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "audit_events", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/lib/services.ts(576,21): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/lib/services.ts(613,70): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+test-param-edit.ts(2,20): error TS2307: Cannot find module 'dotenv' or its corresponding type declarations.

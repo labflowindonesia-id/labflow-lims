@@ -2,7 +2,8 @@
 
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { DenseTable } from "@/components/ui/DenseTable";
-import { MOCK_QUOTATIONS, MOCK_CUSTOMERS } from "@/data/mock-db";
+import { useQuotations, useCustomers } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useState, useMemo } from "react";
@@ -10,6 +11,11 @@ import { useState, useMemo } from "react";
 type QuotationStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "all";
 
 export default function QuotationsTable() {
+    const { data: quotations, isLoading, error } = useQuotations();
+    const { data: customers } = useCustomers();
+    const { user } = useAuth();
+    const isManager = user?.role === "manager";
+
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<QuotationStatus>("all");
     const [customerFilter, setCustomerFilter] = useState<string>("all");
@@ -19,23 +25,25 @@ export default function QuotationsTable() {
 
     // Get unique customers for filter dropdown
     const uniqueCustomers = useMemo(() => {
-        const customerIds = [...new Set(MOCK_QUOTATIONS.map(q => q.customer_id))];
+        if (!quotations || !customers) return [];
+        const customerIds = [...new Set(quotations.map(q => q.customer_id))];
         return customerIds.map(id => {
-            const customer = MOCK_CUSTOMERS.find(c => c.id === id);
+            const customer = customers.find(c => c.id === id);
             return { id, name: customer?.name || "Unknown" };
         });
-    }, []);
+    }, [quotations, customers]);
 
     // Filter and sort quotations
     const filteredQuotations = useMemo(() => {
-        let result = [...MOCK_QUOTATIONS];
+        if (!quotations) return [];
+        let result = [...quotations];
 
         // Search filter
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(quote =>
-                quote.quotation_no.toLowerCase().includes(q) ||
-                quote.customer_name_snapshot.toLowerCase().includes(q)
+                quote.quotation_number.toLowerCase().includes(q) ||
+                (quote.customer_name_snapshot || "").toLowerCase().includes(q)
             );
         }
 
@@ -67,7 +75,8 @@ export default function QuotationsTable() {
         });
 
         return result;
-    }, [searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
+    }, [quotations, searchQuery, statusFilter, customerFilter, dateSort, dateFrom, dateTo]);
+
 
     const statusOptions: { value: QuotationStatus; label: string }[] = [
         { value: "all", label: "All Status" },
@@ -82,12 +91,14 @@ export default function QuotationsTable() {
             title="Quotation History"
             subtitle="Manage sales proposals and contracts"
             action={
-                <Link href="/quotations/create">
-                    <button className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-primary-hover">
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                        New Quote
-                    </button>
-                </Link>
+                !isManager ? (
+                    <Link href="/quotations/create">
+                        <button className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-primary-hover">
+                            <span className="material-symbols-outlined text-[16px]">add</span>
+                            New Quote
+                        </button>
+                    </Link>
+                ) : undefined
             }
         >
             {/* Search and Filter Toolbar */}
@@ -173,10 +184,27 @@ export default function QuotationsTable() {
                 </button>
             </div>
 
+            {/* Loading State */}
+            {isLoading && (
+                <div className="flex items-center justify-center py-12">
+                    <span className="material-symbols-outlined animate-spin text-2xl text-primary">progress_activity</span>
+                </div>
+            )}
+
+            {/* Error State */}
+            {error && (
+                <div className="flex flex-col items-center py-8 text-red-500">
+                    <span className="material-symbols-outlined text-4xl">error</span>
+                    <p className="mt-2 text-sm">Failed to load quotations</p>
+                </div>
+            )}
+
             {/* Results Count */}
-            <div className="mb-3 text-xs text-text-secondary">
-                Showing {filteredQuotations.length} of {MOCK_QUOTATIONS.length} quotations
-            </div>
+            {!isLoading && !error && (
+                <div className="mb-3 text-xs text-text-secondary">
+                    Showing {filteredQuotations.length} of {quotations?.length || 0} quotations
+                </div>
+            )}
 
             {/* Table */}
             {filteredQuotations.length > 0 ? (
@@ -187,7 +215,7 @@ export default function QuotationsTable() {
                         window.location.href = `/quotations/${q.id}`;
                     }}
                     columns={[
-                        { header: "Quote No", accessorKey: "quotation_no", className: "font-mono font-medium" },
+                        { header: "Quote No", accessorKey: "quotation_number", className: "font-mono font-medium" },
                         { header: "Customer", accessorKey: "customer_name_snapshot" },
                         {
                             header: "Date",
@@ -196,9 +224,9 @@ export default function QuotationsTable() {
                         },
                         {
                             header: "Total",
-                            accessorKey: "total_amount",
+                            accessorKey: "grand_total",
                             className: "text-right font-mono",
-                            cell: q => `IDR ${q.total_amount.toLocaleString()}`
+                            cell: q => `IDR ${(q.grand_total || 0).toLocaleString()}`
                         },
                         {
                             header: "Status",

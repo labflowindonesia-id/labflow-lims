@@ -1,5 +1,6 @@
 // Auth module exports
-export { authService, AuthUser, PortalUser } from './auth.service';
+export { authService } from './auth.service';
+export type { AuthUser, PortalUser } from './auth.service';
 export {
     requireAuth,
     requirePortalAuth,
@@ -18,6 +19,6 @@ export {
     hasAnyPermission,
     hasAllPermissions,
     getPermissionsForRole,
-    Permission,
 } from './rbac.middleware';
+export type { Permission } from './rbac.middleware';
 export { authRoutes } from './auth.routes';
